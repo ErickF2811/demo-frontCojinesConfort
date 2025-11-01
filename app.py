@@ -83,18 +83,18 @@ def fetch_stock_summary(filters: Dict[str, str]) -> List[Dict[str, Any]]:
         WITH movement_totals AS (
             SELECT
                 id_material,
-                SUM(CASE WHEN LOWER(tipo_movimiento) = 'entrada' THEN cantidad ELSE 0 END) AS total_entradas,
-                SUM(CASE WHEN LOWER(tipo_movimiento) = 'salida' THEN cantidad ELSE 0 END) AS total_salidas
+                SUM(CASE WHEN LOWER(tipo) = 'entrada' THEN cantidad ELSE 0 END) AS total_entradas,
+                SUM(CASE WHEN LOWER(tipo) = 'salida' THEN cantidad ELSE 0 END) AS total_salidas
             FROM vista_movimientos_materiales
             GROUP BY id_material
         ),
         movement_history AS (
             SELECT
                 id_material,
-                tipo_movimiento,
+                tipo,
                 SUM(cantidad) AS total_por_tipo
             FROM vista_movimientos_materiales
-            GROUP BY id_material, tipo_movimiento
+            GROUP BY id_material, tipo
         )
         SELECT
             m.id_material,
@@ -108,10 +108,10 @@ def fetch_stock_summary(filters: Dict[str, str]) -> List[Dict[str, Any]]:
             COALESCE(mt.total_entradas, 0) - COALESCE(mt.total_salidas, 0) AS stock_actual,
             COALESCE(json_agg(
                 json_build_object(
-                    'tipo_movimiento', mh.tipo_movimiento,
+                    'tipo_movimiento', mh.tipo,
                     'total_por_tipo', mh.total_por_tipo
                 )
-                ORDER BY mh.tipo_movimiento
+                ORDER BY mh.tipo
             ) FILTER (WHERE mh.id_material IS NOT NULL), '[]') AS movimientos_por_tipo
         FROM tbl_materiales m
         LEFT JOIN tbl_proveedores p ON m.proveedor = p.id_proveedor
@@ -214,8 +214,8 @@ app = Flask(__name__)
 
 @app.route("/")
 def index() -> str:
-    """Render the main dashboard."""
-    return render_template("index.html")
+    """Render materials page as the home."""
+    return render_template("materiales.html")
 
 
 @app.route("/api/filters")

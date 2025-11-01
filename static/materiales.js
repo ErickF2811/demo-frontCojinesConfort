@@ -59,7 +59,7 @@ function renderTableRows(data) {
   tableBody.innerHTML = "";
   if (!Array.isArray(data) || data.length === 0) {
     const row = document.createElement("tr");
-    row.innerHTML = '<td colspan="9" class="empty">No se encontraron materiales con los filtros seleccionados.</td>';
+    row.innerHTML = '<td colspan="10" class="empty">No se encontraron materiales con los filtros seleccionados.</td>';
     tableBody.appendChild(row);
     return;
   }
@@ -70,6 +70,7 @@ function renderTableRows(data) {
     const stock = item.stock_actual != null ? Number(item.stock_actual) : 0;
     row.innerHTML = `
       <td class="image-cell" data-label="Imagen">${renderImageCell(item.storage_account, item.imagen_name || item.material_name)}</td>
+      <td data-label="ID">${item.id_material || ""}</td>
       <td data-label="Material">${item.material_name}</td>
       <td data-label="Color">${item.color}</td>
       <td data-label="Tipo">${item.tipo}</td>
@@ -86,7 +87,7 @@ function renderTableRows(data) {
 async function fetchMaterials() {
   try {
     resultsSummary.textContent = "Consultando base de datos…";
-    tableBody.innerHTML = '<tr><td colspan="9" class="empty">Cargando…</td></tr>';
+    tableBody.innerHTML = '<tr><td colspan="10" class="empty">Cargando…</td></tr>';
     const query = buildQueryParams();
     const response = await fetch(`/api/materiales${query ? `?${query}` : ""}`);
     const data = await response.json();
@@ -119,4 +120,3 @@ resetButton.addEventListener("click", () => {
 window.addEventListener("DOMContentLoaded", () => {
   fetchFilters().then(fetchMaterials);
 });
-
