@@ -201,6 +201,21 @@ tbody tr:hover {
   font-style: italic;
 }
 
+/* Thumbnails for materials list */
+.image-cell {
+  width: 72px;
+}
+
+.thumb {
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #e2e8f0;
+  border: 1px solid var(--border);
+  display: block;
+}
+
 .page-footer {
   text-align: center;
   padding: 2rem 0 3rem;

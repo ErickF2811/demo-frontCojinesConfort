@@ -9,7 +9,7 @@ from psycopg2.extras import RealDictCursor
 
 def get_database_url() -> str:
     """Return the database connection string from the environment."""
-    database_url = os.environ.get("DATABASE_URL")
+    database_url = "postgresql://admin:admin123@172.21.0.8:5432/cojines"
     if not database_url:
         raise RuntimeError(
             "DATABASE_URL environment variable is not set. Please provide a valid "
@@ -53,7 +53,6 @@ def fetch_material_filters() -> Dict[str, List[str]]:
             filters["tipo"].add(row["tipo"])
             filters["categoria"].add(row["categoria"])
             filters["provider_name"].add(row["provider_name"])
-
     return {key: sorted(value) for key, value in filters.items()}
 
 
@@ -150,6 +149,66 @@ def fetch_stock_summary(filters: Dict[str, str]) -> List[Dict[str, Any]]:
     ]
 
 
+def fetch_material_list(filters: Dict[str, str]) -> List[Dict[str, Any]]:
+    """Fetch materials from the database view with provider and image URL."""
+    where_clauses = []
+    params: List[Any] = []
+
+    mapping = {
+        "material_name": ("COALESCE(NULLIF(TRIM(material_name), ''), 'Sin nombre')", "ILIKE"),
+        "color": ("COALESCE(NULLIF(TRIM(color), ''), 'Sin color')", "ILIKE"),
+        "tipo": ("COALESCE(NULLIF(TRIM(tipo), ''), 'Sin tipo')", "ILIKE"),
+        "categoria": ("COALESCE(NULLIF(TRIM(categoria), ''), 'Sin categoría')", "ILIKE"),
+        "provider_name": ("COALESCE(NULLIF(TRIM(proveedor), ''), 'Sin proveedor')", "ILIKE"),
+    }
+
+    for key, value in filters.items():
+        if value and key in mapping:
+            expression, operator = mapping[key]
+            where_clauses.append(f"{expression} {operator} %s")
+            params.append(f"%{value}%")
+
+    where_sql = ""
+    if where_clauses:
+        where_sql = "WHERE " + " AND ".join(where_clauses)
+
+    query = f"""
+        SELECT
+            id_material,
+            COALESCE(NULLIF(TRIM(material_name), ''), 'Sin nombre') AS material_name,
+            COALESCE(NULLIF(TRIM(color), ''), 'Sin color') AS color,
+            COALESCE(NULLIF(TRIM(tipo), ''), 'Sin tipo') AS tipo,
+            COALESCE(NULLIF(TRIM(categoria), ''), 'Sin categoría') AS categoria,
+            COALESCE(NULLIF(TRIM(proveedor), ''), 'Sin proveedor') AS provider_name,
+            COALESCE(NULLIF(TRIM(unidad), ''), '') AS unidad,
+            costo_unitario,
+            COALESCE(NULLIF(TRIM(imagen_name), ''), '') AS imagen_name,
+            COALESCE(NULLIF(TRIM(storage_account), ''), '') AS storage_account,
+            COALESCE(stock_actual, 0) AS stock_actual
+        FROM vista_materiales_proveedores
+        {where_sql}
+        ORDER BY material_name
+    """
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(query, params)
+        rows = list(cur.fetchall())
+
+    def normalize_value(value: Any) -> Any:
+        if isinstance(value, Decimal):
+            return float(value)
+        if isinstance(value, list):
+            return [normalize_value(item) for item in value]
+        if isinstance(value, dict):
+            return {key: normalize_value(item) for key, item in value.items()}
+        return value
+
+    return [
+        {key: normalize_value(value) for key, value in row.items()}
+        for row in rows
+    ]
+
+
 app = Flask(__name__)
 
 
@@ -181,6 +240,30 @@ def api_stock():
 
     try:
         data = fetch_stock_summary(filters)
+        return jsonify(data)
+    except Exception as exc:  # pragma: no cover - used for runtime error reporting
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/materiales")
+def materiales_page() -> str:
+    """Render the materials-only page."""
+    return render_template("materiales.html")
+
+
+@app.route("/api/materiales")
+def api_materiales():
+    """Return the materials list coming from the DB view."""
+    filters = {
+        "material_name": request.args.get("material_name", type=str, default=""),
+        "color": request.args.get("color", type=str, default=""),
+        "tipo": request.args.get("tipo", type=str, default=""),
+        "categoria": request.args.get("categoria", type=str, default=""),
+        "provider_name": request.args.get("provider_name", type=str, default=""),
+    }
+
+    try:
+        data = fetch_material_list(filters)
         return jsonify(data)
     except Exception as exc:  # pragma: no cover - used for runtime error reporting
         return jsonify({"error": str(exc)}), 500

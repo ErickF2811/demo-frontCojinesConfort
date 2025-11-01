@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Materiales · Cojines Confort</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  </head>
+  <body>
+    <header class="page-header">
+      <div>
+        <h1>Listado de Materiales</h1>
+        <p class="subtitle">Vista de materiales con imagen, proveedor y stock actual.</p>
+      </div>
+      <button id="refreshButton" class="button button-secondary" type="button">Actualizar datos</button>
+    </header>
+
+    <main>
+      <section class="filters">
+        <h2>Filtros</h2>
+        <form id="filtersForm">
+          <div class="filter-grid">
+            <label class="filter">
+              <span>Material</span>
+              <select id="materialFilter" name="material_name"></select>
+            </label>
+            <label class="filter">
+              <span>Color</span>
+              <select id="colorFilter" name="color"></select>
+            </label>
+            <label class="filter">
+              <span>Tipo</span>
+              <select id="tipoFilter" name="tipo"></select>
+            </label>
+            <label class="filter">
+              <span>Categoría</span>
+              <select id="categoriaFilter" name="categoria"></select>
+            </label>
+            <label class="filter">
+              <span>Proveedor</span>
+              <select id="proveedorFilter" name="provider_name"></select>
+            </label>
+          </div>
+          <div class="filters-actions">
+            <button class="button button-primary" type="submit">Aplicar filtros</button>
+            <button class="button button-muted" id="resetFilters" type="button">Limpiar</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="table-card">
+        <header class="table-card__header">
+          <div>
+            <h2>Materiales</h2>
+            <p id="resultsSummary" class="results-summary">Preparando información…</p>
+          </div>
+        </header>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Imagen</th>
+                <th>Material</th>
+                <th>Color</th>
+                <th>Tipo</th>
+                <th>Categoría</th>
+                <th>Proveedor</th>
+                <th>Unidad</th>
+                <th class="text-right">Costo unitario</th>
+                <th class="text-right">Stock</th>
+              </tr>
+            </thead>
+            <tbody id="materialsTableBody">
+              <tr>
+                <td colspan="9" class="empty">No hay datos disponibles.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <footer class="page-footer">
+      <p>
+        Datos desde vista <code>vista_materiales_proveedores</code> en PostgreSQL.
+      </p>
+    </footer>
+
+    <script src="{{ url_for('static', filename='materiales.js') }}" defer></script>
+  </body>
+  </html>
+
