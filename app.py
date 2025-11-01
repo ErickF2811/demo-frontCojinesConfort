@@ -85,7 +85,7 @@ def fetch_stock_summary(filters: Dict[str, str]) -> List[Dict[str, Any]]:
                 id_material,
                 SUM(CASE WHEN LOWER(tipo_movimiento) = 'entrada' THEN cantidad ELSE 0 END) AS total_entradas,
                 SUM(CASE WHEN LOWER(tipo_movimiento) = 'salida' THEN cantidad ELSE 0 END) AS total_salidas
-            FROM tbl_movimientos
+            FROM vista_movimientos_materiales
             GROUP BY id_material
         ),
         movement_history AS (
@@ -93,7 +93,7 @@ def fetch_stock_summary(filters: Dict[str, str]) -> List[Dict[str, Any]]:
                 id_material,
                 tipo_movimiento,
                 SUM(cantidad) AS total_por_tipo
-            FROM tbl_movimientos
+            FROM vista_movimientos_materiales
             GROUP BY id_material, tipo_movimiento
         )
         SELECT
