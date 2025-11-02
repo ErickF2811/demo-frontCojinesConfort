@@ -23,6 +23,8 @@ const catalogNameInput = document.getElementById("catalogName");
 const catalogDescriptionInput = document.getElementById("catalogDescription");
 const catalogCollectionInput = document.getElementById("catalogCollection");
 const catalogStackInput = document.getElementById("catalogStack");
+const catalogCoverInput = document.getElementById("catalogCover");
+const catalogCoverLabel = document.getElementById("catalogCoverLabel");
 
 
 function syncMobileLayoutClass() {
@@ -320,7 +322,7 @@ async function fetchCatalogs() {
 
       const stackLabel = document.createElement("label");
       stackLabel.className = "catalog-item__stack";
-      stackLabel.innerHTML = `<input type="radio" name="catalogStack" value="${item.catalog_id}" ${item.stack ? "checked" : ""}> Destacar`;
+      stackLabel.innerHTML = `<input type="checkbox" class="catalog-stack" data-id="${item.catalog_id}" ${item.stack ? "checked" : ""}> Destacar`;
 
       actions.appendChild(link);
       actions.appendChild(stackLabel);
@@ -395,6 +397,12 @@ async function handleCatalogUpload(event) {
   formData.append("collection", collection);
   formData.append("stack", stackSelected ? "1" : "0");
   formData.append("file", file);
+  if (catalogCoverInput && catalogCoverInput.files && catalogCoverInput.files.length) {
+    const cover = catalogCoverInput.files[0];
+    if (cover && (!cover.type || cover.type.toLowerCase().startsWith("image/"))) {
+      formData.append("cover", cover);
+    }
+  }
   if (catalogStatus) {
     catalogStatus.textContent = "Subiendo catálogo…";
     catalogStatus.style.color = "#475569";
@@ -512,6 +520,15 @@ window.addEventListener("DOMContentLoaded", () => {
       catalogStatus.style.color = "#475569";
     }
   });
+  
+  catalogCoverInput?.addEventListener('change', () => {
+    if (!catalogCoverInput.files || !catalogCoverInput.files.length) {
+      if (catalogCoverLabel) catalogCoverLabel.textContent = "Adjunta una portada (opcional)…";
+      return;
+    }
+    const file = catalogCoverInput.files[0];
+    if (catalogCoverLabel) catalogCoverLabel.textContent = file.name;
+  });
 
   catalogRefreshBtn?.addEventListener('click', () => {
     catalogsLoaded = false;
@@ -555,6 +572,36 @@ window.addEventListener("DOMContentLoaded", () => {
         catalogStatus.dataset.state = "error";
       }
       await fetchCatalogs();
+    }
+  });
+
+  // New handler to allow multiple featured catalogs using checkboxes
+  catalogListEl?.addEventListener('change', async (event) => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement) || !input.classList.contains('catalog-stack')) return;
+    const catalogId = input.dataset.id;
+    if (!catalogId) return;
+    try {
+      const response = await fetch(`/api/catalogs/${catalogId}/stack`, {
+        method: "POST",
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: !!input.checked })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "No se pudo actualizar el destacado.");
+      if (catalogStatus) {
+        catalogStatus.textContent = input.checked ? "Marcado como destacado." : "Destacado desactivado.";
+        catalogStatus.style.color = "#16a34a";
+        catalogStatus.dataset.state = "success";
+      }
+    } catch (error) {
+      console.error("Actualizar stack catálogo", error);
+      if (catalogStatus) {
+        catalogStatus.textContent = error.message || "No se pudo actualizar el catálogo destacado.";
+        catalogStatus.style.color = "#b91c1c";
+        catalogStatus.dataset.state = "error";
+      }
+      input.checked = !input.checked;
     }
   });
 

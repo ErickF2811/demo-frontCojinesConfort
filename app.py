@@ -10,7 +10,12 @@ from uuid import uuid4
 from flask import Flask, jsonify, render_template, request
 
 from db import get_connection
-from services.catalogs import create_catalog_entry, list_catalog_entries, set_catalog_stack
+from services.catalogs import (
+    create_catalog_entry,
+    list_catalog_entries,
+    set_catalog_stack,
+    update_catalog_stack,
+)
 
 try:  # Optional dependency for Azure Blob Storage
     from azure.storage.blob import BlobServiceClient  # type: ignore
@@ -518,7 +523,6 @@ def upload_blob_stream(
         data=file_obj,
         overwrite=True,
         content_type=content_type or "application/octet-stream",
-        metadata={"original_name": filename or blob_name},
     )
     return f"{container_client.url}/{blob_path}"
 
@@ -538,6 +542,7 @@ def serialize_catalog_row(
         "collection": row.get("collection") or "",
         "stack": bool(row.get("stack")),
         "url": row.get("url_catalogo") or "",
+        "cover_url": row.get("url_portada") or "",
         "created_at": (
             row.get("created_at").isoformat()
             if isinstance(row.get("created_at"), datetime)
@@ -719,6 +724,7 @@ def api_catalogs():
     """Manage PDF catalog uploads and listing."""
     if request.method == "POST":
         file = request.files.get("file")
+        cover = request.files.get("cover")  # optional portada/imagen
         if not file or not file.filename:
             return jsonify({"error": "Selecciona un archivo PDF."}), 400
 
@@ -750,12 +756,25 @@ def api_catalogs():
                 container_name=AZURE_BLOB_CATALOG_CONTAINER,
                 prefix="catalogs",
             )
+            cover_url = None
+            if cover and cover.filename:
+                cover_mime = (cover.mimetype or "").lower()
+                if not cover_mime.startswith("image/"):
+                    return jsonify({"error": "La portada debe ser una imagen."}), 400
+                cover_url = upload_blob_stream(
+                    cover.stream,
+                    filename=cover.filename,
+                    content_type=cover.mimetype,
+                    container_name=AZURE_BLOB_CATALOG_CONTAINER,
+                    prefix="portadas_catalogo",
+                )
             record = create_catalog_entry(
                 catalog_name=catalog_name,
                 description=description,
                 collection=collection,
                 stack=stack,
                 url_catalogo=url,
+                url_portada=cover_url,
             )
             record = normalize_value(record)
             container = get_blob_container_client(AZURE_BLOB_CATALOG_CONTAINER)
@@ -782,13 +801,28 @@ def api_catalogs():
 
 @app.route("/api/catalogs/<int:catalog_id>/stack", methods=["POST"])
 def api_catalog_stack(catalog_id: int):
-    """Mark a catalog as the featured (stack=1) entry."""
+    """Set or unset a catalog as featured. Accepts JSON {"value": true|false}.
+
+    If no body is provided, defaults to true.
+    """
     try:
-        record = set_catalog_stack(catalog_id)
+        payload = request.get_json(silent=True) or {}
+        # Also support form-urlencoded fallbacks
+        raw = payload.get("value") if isinstance(payload, dict) else None
+        if raw is None:
+            raw = request.form.get("value") or request.form.get("stack")
+        value = True
+        if isinstance(raw, str):
+            value = raw.strip().lower() in {"1", "true", "on", "yes"}
+        elif isinstance(raw, bool):
+            value = raw
+
+        record = update_catalog_stack(catalog_id, value)
         record = normalize_value(record)
         container = get_blob_container_client(AZURE_BLOB_CATALOG_CONTAINER)
-        payload = serialize_catalog_row(record, container=container)
-        return jsonify({"message": "Catálogo destacado actualizado.", "catalog": payload})
+        payload_resp = serialize_catalog_row(record, container=container)
+        msg = "Marcado como destacado" if value else "Destacado desactivado"
+        return jsonify({"message": f"{msg}.", "catalog": payload_resp})
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 404
     except Exception as exc:  # pragma: no cover
@@ -881,4 +915,4 @@ def api_chat_messages():
     return jsonify({"messages": messages})
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    app.run(debug=True, host="0.0.0.0", port=os.getenv("PORT", 5000))

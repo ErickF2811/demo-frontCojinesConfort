@@ -15,7 +15,8 @@ def list_catalog_entries() -> List[Dict[str, Any]]:
             description,
             collection,
             stack,
-            url_catalogo
+            url_catalogo,
+            url_portada
         FROM tbl_catalogo
         ORDER BY created_at DESC, catalog_id DESC
     """
@@ -32,19 +33,22 @@ def create_catalog_entry(
     collection: Optional[str],
     stack: bool,
     url_catalogo: str,
+    url_portada: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Insert a new catalog record and optionally mark it as the featured one."""
+    """Insert a new catalog record. Allows multiple featured entries.
+
+    Previously, when inserting with stack=True it would clear other featured
+    rows. This behavior has been removed to support multiple selections.
+    """
     stack_value = 1 if stack else 0
     with get_connection() as conn, conn.cursor() as cur:
-        if stack_value:
-            cur.execute("UPDATE tbl_catalogo SET stack = 0 WHERE stack = 1;")
         cur.execute(
             """
-            INSERT INTO tbl_catalogo (catalog_name, description, collection, stack, url_catalogo)
-            VALUES (%s, %s, %s, %s, %s)
-            RETURNING catalog_id, created_at, catalog_name, description, collection, stack, url_catalogo
+            INSERT INTO tbl_catalogo (catalog_name, description, collection, stack, url_catalogo, url_portada)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING catalog_id, created_at, catalog_name, description, collection, stack, url_catalogo, url_portada
             """,
-            (catalog_name, description, collection, stack_value, url_catalogo),
+            (catalog_name, description, collection, stack_value, url_catalogo, url_portada),
         )
         record = cur.fetchone()
         conn.commit()
@@ -52,7 +56,16 @@ def create_catalog_entry(
 
 
 def set_catalog_stack(catalog_id: int) -> Dict[str, Any]:
-    """Mark the given catalog as the featured one (stack=1)."""
+    """Legacy helper kept for compatibility: sets the given catalog as featured
+    and does NOT unfeature others anymore.
+
+    Use update_catalog_stack for explicit value control.
+    """
+    return update_catalog_stack(catalog_id, True)
+
+
+def update_catalog_stack(catalog_id: int, value: bool) -> Dict[str, Any]:
+    """Set stack flag for a single catalog without affecting others."""
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute("SELECT catalog_id FROM tbl_catalogo WHERE catalog_id = %s;", (catalog_id,))
         if not cur.fetchone():
@@ -60,13 +73,14 @@ def set_catalog_stack(catalog_id: int) -> Dict[str, Any]:
         cur.execute(
             """
             UPDATE tbl_catalogo
-            SET stack = CASE WHEN catalog_id = %s THEN 1 ELSE 0 END
+            SET stack = %s
+            WHERE catalog_id = %s
             """,
-            (catalog_id,),
+            (1 if value else 0, catalog_id),
         )
         cur.execute(
             """
-            SELECT catalog_id, created_at, catalog_name, description, collection, stack, url_catalogo
+            SELECT catalog_id, created_at, catalog_name, description, collection, stack, url_catalogo, url_portada
             FROM tbl_catalogo
             WHERE catalog_id = %s
             """,
