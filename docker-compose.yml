@@ -1,11 +1,22 @@
 version: "3.9"
 
 services:
-  web:
+  inv_cojines:
     build: .
-    container_name: cojines-web
+    container_name: inv_cojines
     ports:
       - "5000:5000"
     environment:
       DATABASE_URL: postgresql://admin:admin123@172.21.0.8:5432/cojines
       PORT: 5000
+    networks:
+      cojines_net:
+        ipv4_address: 172.21.0.6  # IP fija dentro de la red
+
+networks:
+  cojines_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.4/30
+
