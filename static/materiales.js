@@ -9,12 +9,33 @@ const nextPageBtn = document.getElementById("nextPage");
 const pageInput = document.getElementById("pageInput");
 const totalPagesEl = document.getElementById("totalPages");
 
-const filterElements = {
-  material_name: document.getElementById("materialFilter"),
-  color: document.getElementById("colorFilter"),
-  tipo: document.getElementById("tipoFilter"),
-  categoria: document.getElementById("categoriaFilter"),
-  provider_name: document.getElementById("proveedorFilter"),
+// Dropdown config for checkbox multi-selects
+const filtersConfig = {
+  material_name: {
+    toggle: document.getElementById('dd-material_name'),
+    panel: document.getElementById('panel-material_name'),
+    options: document.getElementById('opts-material_name')
+  },
+  color: {
+    toggle: document.getElementById('dd-color'),
+    panel: document.getElementById('panel-color'),
+    options: document.getElementById('opts-color')
+  },
+  tipo: {
+    toggle: document.getElementById('dd-tipo'),
+    panel: document.getElementById('panel-tipo'),
+    options: document.getElementById('opts-tipo')
+  },
+  categoria: {
+    toggle: document.getElementById('dd-categoria'),
+    panel: document.getElementById('panel-categoria'),
+    options: document.getElementById('opts-categoria')
+  },
+  provider_name: {
+    toggle: document.getElementById('dd-provider_name'),
+    panel: document.getElementById('panel-provider_name'),
+    options: document.getElementById('opts-provider_name')
+  }
 };
 
 function createOption(value, label) {
@@ -24,11 +45,25 @@ function createOption(value, label) {
   return option;
 }
 
-function populateFilter(select, values) {
-  select.innerHTML = "";
-  select.appendChild(createOption("", "Todos"));
-  values.forEach((value) => {
-    select.appendChild(createOption(value, value));
+function populateCheckboxes(optionsContainer, values) {
+  if (!optionsContainer) return;
+  optionsContainer.innerHTML = '';
+  values.forEach((val) => {
+    const id = `${optionsContainer.id}-${val}`;
+    const wrap = document.createElement('label');
+    wrap.className = 'option-check';
+    wrap.innerHTML = `<input type="checkbox" value="${val}"><span>${val}</span>`;
+    optionsContainer.appendChild(wrap);
+  });
+}
+
+function filterOptions(key, query) {
+  const conf = filtersConfig[key];
+  if (!conf?.options) return;
+  const q = (query || '').toLowerCase();
+  conf.options.querySelectorAll('.option-check').forEach(el => {
+    const text = el.textContent.toLowerCase();
+    el.style.display = q === '' || text.includes(q) ? '' : 'none';
   });
 }
 
@@ -37,8 +72,9 @@ async function fetchFilters() {
     const response = await fetch("/api/filters");
     const data = await response.json();
     if (data.error) throw new Error(data.error);
-    Object.entries(filterElements).forEach(([key, element]) => {
-      populateFilter(element, data[key] || []);
+    Object.entries(filtersConfig).forEach(([key, conf]) => {
+      populateCheckboxes(conf.options, data[key] || []);
+      updateDropdownLabel(key);
     });
   } catch (error) {
     console.error("Error al cargar filtros", error);
@@ -46,10 +82,27 @@ async function fetchFilters() {
   }
 }
 
+function selectedValues(key) {
+  const conf = filtersConfig[key];
+  if (!conf || !conf.options) return [];
+  return Array.from(conf.options.querySelectorAll('input[type="checkbox"]:checked')).map(i => i.value);
+}
+
+function updateDropdownLabel(key) {
+  const conf = filtersConfig[key];
+  if (!conf || !conf.toggle) return;
+  const count = selectedValues(key).length;
+  if (conf.toggle.tagName === 'INPUT') {
+    if (!conf.toggle.value) conf.toggle.placeholder = count === 0 ? 'Todos' : `${count} seleccionado(s)`;
+  } else {
+    conf.toggle.textContent = count === 0 ? 'Todos' : `${count} seleccionado(s)`;
+  }
+}
+
 function buildQueryParams() {
   const params = new URLSearchParams();
-  Object.entries(filterElements).forEach(([key, element]) => {
-    if (element.value) params.set(key, element.value);
+  Object.keys(filtersConfig).forEach((key) => {
+    selectedValues(key).forEach(v => params.append(key, v));
   });
   return params.toString();
 }
@@ -84,12 +137,12 @@ function renderTableRows(data) {
       <td data-label="ID">${item.id_material || ""}</td>
       <td data-label="Material">${item.material_name}</td>
       <td data-label="Color">${item.color}</td>
-      <td data-label="Tipo">${item.tipo}</td>
       <td data-label="Categoría">${item.categoria}</td>
       <td data-label="Proveedor">${item.provider_name || item.proveedor || ""}</td>
       <td data-label="Unidad">${item.unidad || ""}</td>
       <td data-label="Costo unitario" class="text-right">${cost === null ? "—" : cost.toLocaleString("es-ES", { style: "currency", currency: "USD" })}</td>
       <td data-label="Stock" class="text-right ${stock < 0 ? "text-danger" : ""}">${stock.toLocaleString("es-ES")}</td>
+      <td data-label="Tipo">${item.tipo}</td>
     `;
     tableBody.appendChild(row);
     // Click handler to open detail modal (row itself)
@@ -141,8 +194,11 @@ refreshButton.addEventListener("click", () => {
 });
 
 resetButton.addEventListener("click", () => {
-  Object.values(filterElements).forEach((element) => {
-    element.value = "";
+  // Limpiar checkboxes de todos los dropdowns y actualizar etiqueta
+  Object.entries(filtersConfig).forEach(([key, conf]) => {
+    if (!conf?.options) return;
+    conf.options.querySelectorAll('input[type="checkbox"]').forEach(i => i.checked = false);
+    updateDropdownLabel(key);
   });
   fetchMaterials();
 });
@@ -183,6 +239,48 @@ window.addEventListener("DOMContentLoaded", () => {
     p = Math.max(1, Math.min(totalPages, p));
     currentPage = p;
     fetchMaterials();
+  });
+  // Dropdown toggles
+  Object.entries(filtersConfig).forEach(([key, conf]) => {
+    // Abrir al click o al enfocar
+    conf.toggle?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      // cerrar otros primero
+      Object.values(filtersConfig).forEach(c => c.toggle?.parentElement.classList.remove('open'));
+      conf.toggle.parentElement.classList.toggle('open');
+    });
+    conf.toggle?.addEventListener('focus', (e) => {
+      e.stopPropagation();
+      Object.values(filtersConfig).forEach(c => c.toggle?.parentElement.classList.remove('open'));
+      conf.toggle.parentElement.classList.add('open');
+    });
+    // Buscar mientras escribe
+    conf.toggle?.addEventListener('input', () => {
+      filterOptions(key, conf.toggle.value || '');
+    });
+    conf.panel?.addEventListener('click', (e) => e.stopPropagation());
+    conf.options?.addEventListener('change', () => updateDropdownLabel(key));
+  });
+  document.addEventListener('click', (e) => {
+    Object.values(filtersConfig).forEach(conf => conf.toggle?.parentElement.classList.remove('open'));
+  });
+  // Actions: select-all / clear
+  document.querySelectorAll('.dropdown-actions .link').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const key = btn.getAttribute('data-key');
+      const action = btn.getAttribute('data-action');
+      const conf = filtersConfig[key];
+      if (!conf) return;
+      const inputs = Array.from(conf.options.querySelectorAll('input[type="checkbox"]'));
+      if (action === 'select-all') inputs.forEach(i => i.checked = true);
+      if (action === 'clear') inputs.forEach(i => i.checked = false);
+      updateDropdownLabel(key);
+      // si se limpió, también limpiamos el texto de búsqueda
+      if (action === 'clear' && conf.toggle?.tagName === 'INPUT') {
+        conf.toggle.value = '';
+        filterOptions(key, '');
+      }
+    });
   });
 });
 
@@ -427,8 +525,17 @@ function toggleSort(target) {
     sortBy = sort;
     sortDir = "asc";
   }
+  // Update visual indicators
+  [thSortId, thSortStock].forEach(th => {
+    if (!th) return;
+    th.classList.remove('sorted-asc','sorted-desc');
+    if (th.dataset.sort === sortBy) th.classList.add(sortDir === 'asc' ? 'sorted-asc' : 'sorted-desc');
+  });
   fetchMaterials();
 }
 
 thSortId?.addEventListener("click", () => toggleSort(thSortId));
 thSortStock?.addEventListener("click", () => toggleSort(thSortStock));
+
+// Initialize sort indicators on load
+if (thSortId) thSortId.classList.add('sorted-asc');

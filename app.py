@@ -251,11 +251,16 @@ def fetch_material_list_with_total(
         "provider_name": ("COALESCE(NULLIF(TRIM(proveedor), ''), 'Sin proveedor')", "ILIKE"),
     }
 
-    for key, value in filters.items():
-        if value and key in mapping:
-            expression, operator = mapping[key]
-            where_clauses.append(f"{expression} {operator} %s")
-            params.append(f"%{value}%")
+    for key, values in filters.items():
+        if not values or key not in mapping:
+            continue
+        expression, operator = mapping[key]
+        ors = []
+        for v in values:
+            ors.append(f"{expression} {operator} %s")
+            params.append(f"%{v}%")
+        if ors:
+            where_clauses.append("(" + " OR ".join(ors) + ")")
 
     where_sql = ""
     if where_clauses:
@@ -426,12 +431,18 @@ def materiales_page() -> str:
 @app.route("/api/materiales")
 def api_materiales():
     """Return the materials list coming from the DB view."""
+    def get_multi(name: str) -> list[str]:
+        vals = [v for v in request.args.getlist(name) if v and v.strip()]
+        if len(vals) == 1 and "," in vals[0]:
+            vals = [p.strip() for p in vals[0].split(",") if p.strip()]
+        return vals
+
     filters = {
-        "material_name": request.args.get("material_name", type=str, default=""),
-        "color": request.args.get("color", type=str, default=""),
-        "tipo": request.args.get("tipo", type=str, default=""),
-        "categoria": request.args.get("categoria", type=str, default=""),
-        "provider_name": request.args.get("provider_name", type=str, default=""),
+        "material_name": get_multi("material_name"),
+        "color": get_multi("color"),
+        "tipo": get_multi("tipo"),
+        "categoria": get_multi("categoria"),
+        "provider_name": get_multi("provider_name"),
     }
     sort_by = request.args.get("sort_by", type=str, default="id")
     sort_dir = request.args.get("sort_dir", type=str, default="asc")

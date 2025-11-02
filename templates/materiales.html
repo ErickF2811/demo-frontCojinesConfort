@@ -23,23 +23,68 @@
           <div class="filter-grid">
             <label class="filter">
               <span>Material</span>
-              <select id="materialFilter" name="material_name"></select>
+              <div class="multi-dropdown" data-key="material_name">
+                <input type="text" class="dropdown-input" id="dd-material_name" placeholder="Todos" autocomplete="off" />
+                <div class="dropdown-panel" id="panel-material_name">
+                  <div class="dropdown-actions">
+                    <button class="link" type="button" data-action="select-all" data-key="material_name">Seleccionar todo</button>
+                    <button class="link" type="button" data-action="clear" data-key="material_name">Limpiar</button>
+                  </div>
+                  <div class="options" id="opts-material_name"></div>
+                </div>
+              </div>
             </label>
             <label class="filter">
               <span>Color</span>
-              <select id="colorFilter" name="color"></select>
+              <div class="multi-dropdown" data-key="color">
+                <input type="text" class="dropdown-input" id="dd-color" placeholder="Todos" autocomplete="off" />
+                <div class="dropdown-panel" id="panel-color">
+                  <div class="dropdown-actions">
+                    <button class="link" type="button" data-action="select-all" data-key="color">Seleccionar todo</button>
+                    <button class="link" type="button" data-action="clear" data-key="color">Limpiar</button>
+                  </div>
+                  <div class="options" id="opts-color"></div>
+                </div>
+              </div>
             </label>
             <label class="filter">
               <span>Tipo</span>
-              <select id="tipoFilter" name="tipo"></select>
+              <div class="multi-dropdown" data-key="tipo">
+                <input type="text" class="dropdown-input" id="dd-tipo" placeholder="Todos" autocomplete="off" />
+                <div class="dropdown-panel" id="panel-tipo">
+                  <div class="dropdown-actions">
+                    <button class="link" type="button" data-action="select-all" data-key="tipo">Seleccionar todo</button>
+                    <button class="link" type="button" data-action="clear" data-key="tipo">Limpiar</button>
+                  </div>
+                  <div class="options" id="opts-tipo"></div>
+                </div>
+              </div>
             </label>
             <label class="filter">
               <span>Categoría</span>
-              <select id="categoriaFilter" name="categoria"></select>
+              <div class="multi-dropdown" data-key="categoria">
+                <input type="text" class="dropdown-input" id="dd-categoria" placeholder="Todos" autocomplete="off" />
+                <div class="dropdown-panel" id="panel-categoria">
+                  <div class="dropdown-actions">
+                    <button class="link" type="button" data-action="select-all" data-key="categoria">Seleccionar todo</button>
+                    <button class="link" type="button" data-action="clear" data-key="categoria">Limpiar</button>
+                  </div>
+                  <div class="options" id="opts-categoria"></div>
+                </div>
+              </div>
             </label>
             <label class="filter">
               <span>Proveedor</span>
-              <select id="proveedorFilter" name="provider_name"></select>
+              <div class="multi-dropdown" data-key="provider_name">
+                <input type="text" class="dropdown-input" id="dd-provider_name" placeholder="Todos" autocomplete="off" />
+                <div class="dropdown-panel" id="panel-provider_name">
+                  <div class="dropdown-actions">
+                    <button class="link" type="button" data-action="select-all" data-key="provider_name">Seleccionar todo</button>
+                    <button class="link" type="button" data-action="clear" data-key="provider_name">Limpiar</button>
+                  </div>
+                  <div class="options" id="opts-provider_name"></div>
+                </div>
+              </div>
             </label>
           </div>
           <div class="filters-actions">
@@ -64,12 +109,12 @@
                 <th id="thSortId" class="sortable" data-sort="id">ID</th>
                 <th>Material</th>
                 <th>Color</th>
-                <th>Tipo</th>
                 <th>Categoría</th>
                 <th>Proveedor</th>
                 <th>Unidad</th>
                 <th class="text-right">Costo unitario</th>
                 <th id="thSortStock" class="text-right sortable" data-sort="stock">Stock</th>
+                <th>Tipo</th>
               </tr>
             </thead>
             <tbody id="materialsTableBody">

@@ -77,7 +77,9 @@ main {
 .filter span {
   display: block;
   margin-bottom: 0.5rem;
-  font-weight: 600;
+  font-weight: 400;
+  font-size: 0.95rem;
+  letter-spacing: 0.2px;
 }
 
 select {
@@ -94,6 +96,24 @@ select:focus {
   border-color: var(--primary);
   outline: none;
 }
+
+/* Multi-select dropdown with checkboxes */
+.multi-dropdown { position: relative; }
+.dropdown-toggle { width: 100%; padding: 0.75rem 1rem; border: 1px solid var(--border); border-radius: 12px; background: #f8fafc; text-align: left; cursor: pointer; font-weight: 400; letter-spacing: .2px; color: var(--secondary); }
+.dropdown-input { width: 100%; padding: 0.75rem 1rem; border: 1px solid var(--border); border-radius: 12px; background: #f8fafc; font-weight: 400; letter-spacing: .2px; color: var(--secondary); }
+.dropdown-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,0.15); }
+.dropdown-panel { position: absolute; z-index: 50; top: calc(100% + 6px); left: 0; width: 100%; background: #fff; border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); padding: 0.5rem; display: none; font-size: 0.95rem; }
+.multi-dropdown.open .dropdown-panel { display: block; }
+.dropdown-actions { display: flex; justify-content: space-between; align-items: center; padding: 0.25rem 0.25rem 0.5rem; }
+.dropdown-actions .link { background: transparent; border: none; color: var(--primary); cursor: pointer; }
+.options { max-height: 220px; overflow: auto; padding: 0.25rem; display: grid; gap: 0.25rem; }
+.option-check { display: flex; align-items: center; gap: 0.6rem; padding: 0.25rem 0.35rem; border-radius: 8px; }
+.option-check:hover { background: #f1f5f9; }
+.option-check input { accent-color: var(--primary); width: 16px; height: 16px; }
+.option-check span { font-size: 0.95rem; letter-spacing: 0.2px; }
+
+/* Subtle style for the "Todos" label on closed toggle */
+.dropdown-toggle:empty::after { content: 'Todos'; color: var(--muted); }
 
 .filters-actions {
   display: flex;
@@ -163,6 +183,10 @@ th {
   font-weight: 600;
   color: var(--muted);
 }
+.sortable { position: relative; padding-right: 1.2rem; }
+.sortable::after { content: "↕"; position: absolute; right: 0.5rem; color: #94a3b8; font-size: 0.9rem; }
+.sorted-asc::after { content: "▲"; color: var(--secondary); }
+.sorted-desc::after { content: "▼"; color: var(--secondary); }
 
 tbody tr:hover {
   background: rgba(37, 99, 235, 0.06);
