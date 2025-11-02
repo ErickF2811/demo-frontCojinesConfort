@@ -8,6 +8,18 @@ const prevPageBtn = document.getElementById("prevPage");
 const nextPageBtn = document.getElementById("nextPage");
 const pageInput = document.getElementById("pageInput");
 const totalPagesEl = document.getElementById("totalPages");
+const tableCard = document.querySelector('.table-card');
+const mobileMediaQuery = window.matchMedia('(max-width: 640px)');
+
+function syncMobileLayoutClass() {
+  if (!tableCard) return;
+  const isMobile = mobileMediaQuery.matches;
+  if (isMobile) {
+    tableCard.classList.add('table-card--mobile');
+  } else {
+    tableCard.classList.remove('table-card--mobile');
+  }
+}
 
 // Dropdown config for checkbox multi-selects
 const filtersConfig = {
@@ -132,17 +144,18 @@ function renderTableRows(data) {
     row.dataset.idMaterial = item.id_material || "";
     try { window.__materialsById.set(item.id_material, item); } catch {}
     const url = item.image_url || item.storage_account;
+    const proveedorTxt = item.provider_name || item.proveedor || "";
     row.innerHTML = `
       <td class="image-cell" data-label="Imagen">${renderImageCell(url, item.imagen_name || item.material_name, item.id_material)}</td>
       <td data-label="ID">${item.id_material || ""}</td>
-      <td data-label="Material">${item.material_name}</td>
-      <td data-label="Color">${item.color}</td>
-      <td data-label="Categoría">${item.categoria}</td>
-      <td data-label="Proveedor">${item.provider_name || item.proveedor || ""}</td>
+      <td data-label="Material"><span class="truncate" title="${item.material_name || ""}">${item.material_name || ""}</span></td>
+      <td data-label="Color">${item.color || ""}</td>
+      <td data-label="Categoría"><span class="truncate" title="${item.categoria || ""}">${item.categoria || ""}</span></td>
+      <td data-label="Proveedor"><span class="truncate" title="${proveedorTxt}">${proveedorTxt}</span></td>
       <td data-label="Unidad">${item.unidad || ""}</td>
       <td data-label="Costo unitario" class="text-right">${cost === null ? "—" : cost.toLocaleString("es-ES", { style: "currency", currency: "USD" })}</td>
       <td data-label="Stock" class="text-right ${stock < 0 ? "text-danger" : ""}">${stock.toLocaleString("es-ES")}</td>
-      <td data-label="Tipo">${item.tipo}</td>
+      <td data-label="Tipo">${item.tipo || ""}</td>
     `;
     tableBody.appendChild(row);
     // Click handler to open detail modal (row itself)
@@ -204,6 +217,8 @@ resetButton.addEventListener("click", () => {
 });
 
 window.addEventListener("DOMContentLoaded", () => {
+  syncMobileLayoutClass();
+  mobileMediaQuery.addEventListener('change', syncMobileLayoutClass);
   fetchFilters().then(fetchMaterials);
   // Event delegation to ensure clicks on image/text trigger the same
   tableBody.addEventListener("click", (e) => {
@@ -317,11 +332,19 @@ function showModal() {
   modal.setAttribute("aria-hidden", "false");
   // Fallback display in case of stale CSS state
   modal.style.display = 'block';
+  // Evita el scroll de fondo en móvil
+  document.body.classList.add('no-scroll');
 }
 function hideModal() {
   modal.classList.add("hidden");
   modal.setAttribute("aria-hidden", "true");
   modal.style.display = '';
+  document.body.classList.remove('no-scroll');
+  if (window.__materialsResizeHandler) {
+    window.removeEventListener('resize', window.__materialsResizeHandler);
+    window.__materialsResizeHandler = null;
+  }
+  window.__materialsLastMovs = null;
 }
 
 async function openDetail(idMaterial, baseData) {
@@ -402,11 +425,11 @@ async function openDetail(idMaterial, baseData) {
         const fechaTxt = m.fecha ? new Date(m.fecha).toLocaleString("es-ES") : "";
         const cantidadTxt = (m.cantidad != null ? Number(m.cantidad) : 0).toLocaleString("es-ES");
         tr.innerHTML = `
-          <td>${fechaTxt}</td>
-          <td>${m.tipo || ""}</td>
-          <td>${cantidadTxt} ${m.unidad || ""}</td>
-          <td>${m.motivo || ""}</td>
-          <td>${m.observaciones || ""}</td>
+          <td data-label="Fecha">${fechaTxt}</td>
+          <td data-label="Tipo">${m.tipo || ""}</td>
+          <td data-label="Cant.">${cantidadTxt} ${m.unidad || ""}</td>
+          <td data-label="Motivo">${m.motivo || ""}</td>
+          <td data-label="Obs.">${m.observaciones || ""}</td>
         `;
         obsTable.appendChild(tr);
       });
@@ -416,8 +439,11 @@ async function openDetail(idMaterial, baseData) {
       obsTable.appendChild(tr);
     }
 
-    // Gráficas
-    if (chartEl) chartEl.innerHTML = buildMovementsChart(movs);
+    // Gráficas usando ancho del contenedor (evita overflow en móvil)
+    if (chartEl) {
+      const cw = Math.max(280, chartEl.clientWidth || 0);
+      chartEl.innerHTML = buildMovementsChart(movs, cw);
+    }
     if (chartCompactEl) chartCompactEl.innerHTML = buildCompactChart(movs);
 
     // KPIs
@@ -451,6 +477,15 @@ async function openDetail(idMaterial, baseData) {
         });
       }
     }
+
+    // Redibujar al cambiar tamaño (responsive)
+    window.__materialsLastMovs = movs;
+    window.__materialsResizeHandler = () => {
+      if (!window.__materialsLastMovs || !chartEl) return;
+      const w = Math.max(280, chartEl.clientWidth || 0);
+      chartEl.innerHTML = buildMovementsChart(window.__materialsLastMovs, w);
+    };
+    window.addEventListener('resize', window.__materialsResizeHandler);
   } catch (err) {
     console.error("Detalle material", err);
     if (chartEl) chartEl.textContent = "No fue posible cargar el detalle.";
@@ -505,41 +540,47 @@ function buildCompactChart(movs) {
   return `<svg viewBox="0 0 ${width} ${height}" width="100%" height="100%">${rects}</svg>`;
 }
 
-function buildMovementsChart(movs) {
+function buildMovementsChart(movs, targetWidth) {
   if (!Array.isArray(movs) || movs.length === 0) {
     return '<div class="empty">Sin datos</div>';
   }
-  // Order asc by date
-  const data = [...movs].sort((a,b) => new Date(a.fecha) - new Date(b.fecha));
-  const labels = data.map(m => new Date(m.fecha));
-  const entradas = data.map(m => (m.tipo || "").toLowerCase() === "entrada" ? Number(m.cantidad || 0) : 0);
-  const salidas = data.map(m => (m.tipo || "").toLowerCase() === "salida" ? Number(m.cantidad || 0) : 0);
 
-  // Vertical bars (fecha en X)
-  const width = 680, height = 300, padX = 40, padY = 30;
-  const n = data.length;
-  const maxVal = Math.max(1, ...entradas, ...salidas);
-  const groupW = Math.floor((width - padX*2) / n);
-  const barW = Math.max(10, Math.floor((groupW - 8) / 2));
+  let totalEntradas = 0;
+  let totalSalidas = 0;
+  movs.forEach((m) => {
+    const tipo = (m.tipo || "").toLowerCase();
+    const cantidad = Number(m.cantidad || 0);
+    if (tipo === "entrada") totalEntradas += cantidad;
+    if (tipo === "salida") totalSalidas += cantidad;
+  });
 
-  const yScale = (val) => padY + (1 - val / maxVal) * (height - padY*2);
-  const xFor = (i, seriesIdx) => padX + i * groupW + seriesIdx * (barW + 4);
-  const fmtDate = (d) => d.toLocaleDateString("es-ES", { month: "2-digit", day: "2-digit" });
+  const labels = ["Entradas", "Salidas"];
+  const values = [totalEntradas, totalSalidas];
+  const colors = ["#10b981", "#ef4444"];
 
-  let parts = '';
+  const width = Math.max(300, targetWidth || 480);
+  const height = 220;
+  const padX = 48;
+  const padY = 32;
+  const n = labels.length;
+  const maxVal = Math.max(1, ...values);
+  const groupW = Math.floor((width - padX * 2) / n);
+  const barW = Math.max(28, Math.floor(groupW * 0.55));
+
+  const yScale = (val) => padY + (1 - val / maxVal) * (height - padY * 2);
+
+  let parts = `<line x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}" stroke="#e2e8f0" />`;
+
   for (let i = 0; i < n; i++) {
-    const eH = height - padY - yScale(entradas[i]);
-    const sH = height - padY - yScale(salidas[i]);
-    const ex = xFor(i, 0);
-    const sx = xFor(i, 1);
-    const baseY = height - padY;
-    parts += `<rect x="${ex}" y="${yScale(entradas[i])}" width="${barW}" height="${Math.max(0,eH)}" fill="#10b981" rx="4" />`;
-    parts += `<rect x="${sx}" y="${yScale(salidas[i])}" width="${barW}" height="${Math.max(0,sH)}" fill="#ef4444" rx="4" />`;
-    const lx = padX + i * groupW + barW;
-    parts += `<text x="${lx}" y="${height - 8}" text-anchor="middle" font-size="11" fill="#64748b">${fmtDate(labels[i])}</text>`;
+    const value = values[i];
+    const x = padX + i * groupW + (groupW - barW) / 2;
+    const y = yScale(value);
+    const h = height - padY - y;
+    parts += `<rect x="${x}" y="${y}" width="${barW}" height="${Math.max(0, h)}" fill="${colors[i]}" rx="6" />`;
+    parts += `<text x="${x + barW / 2}" y="${height - padY + 18}" text-anchor="middle" font-size="12" fill="#64748b">${labels[i]}</text>`;
+    parts += `<text x="${x + barW / 2}" y="${y - 8}" text-anchor="middle" font-size="12" font-weight="600" fill="#0f172a">${value.toLocaleString("es-ES")}</text>`;
   }
-  // Axis line
-  parts += `<line x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}" stroke="#cbd5e1" />`;
+
   return `<svg viewBox="0 0 ${width} ${height}" width="100%" height="100%">${parts}</svg>`;
 }
 

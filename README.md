@@ -21,7 +21,8 @@ pip install -r requirements.txt
 Define la variable `DATABASE_URL` con tu cadena de conexión, por ejemplo:
 
 ```bash
-export DATABASE_URL="postgresql://admin:admin@172.21.0.8:5432/cojines"
+export DATABASE_URL="postgresql://admin:admin123@postgre_dev:5432/cojines"
+$env:DATABASE_URL= "postgresql://admin:admin123@postgre_dev/cojines"
 ```
 
 ## Ejecutar el servidor
@@ -146,3 +147,14 @@ La aplicación consulta los siguientes objetos de base de datos. Entre paréntes
 Notas de compatibilidad
 - Los nombres y tipos deben coincidir; si tus vistas devuelven alias diferentes (p. ej., `provider_name` en vez de `proveedor`), mantén ambos o ajusta el SELECT en `app.py`.
 - `tipo` en movimientos debe contener valores comparables en minúsculas (`entrada`/`salida`) o se normaliza con `LOWER(tipo)`.
+
+```powershell
+$IMAGE_NAME = "cojines-app"
+$VERSION = "v1.0"
+$REGISTRY_USER = "erifcamp"
+docker build -t $IMAGE_NAME:$VERSION .
+docker build -t ${IMAGE_NAME}:${VERSION} .
+docker tag ${IMAGE_NAME}:${VERSION} ${REGISTRY_USER}/${IMAGE_NAME}:${VERSION}
+docker push ${REGISTRY_USER}/${IMAGE_NAME}:${VERSION}
+```
+
