@@ -3,6 +3,11 @@ const refreshButton = document.getElementById("refreshButton");
 const resetButton = document.getElementById("resetFilters");
 const resultsSummary = document.getElementById("resultsSummary");
 const tableBody = document.getElementById("materialsTableBody");
+const perPageSelect = document.getElementById("perPage");
+const prevPageBtn = document.getElementById("prevPage");
+const nextPageBtn = document.getElementById("nextPage");
+const pageInput = document.getElementById("pageInput");
+const totalPagesEl = document.getElementById("totalPages");
 
 const filterElements = {
   material_name: document.getElementById("materialFilter"),
@@ -49,10 +54,10 @@ function buildQueryParams() {
   return params.toString();
 }
 
-function renderImageCell(url, altText) {
+function renderImageCell(url, altText, id) {
   if (!url) return "—";
   const safeAlt = altText || "Material";
-  return `<img src="${url}" alt="${safeAlt}" class="thumb" loading="lazy" referrerpolicy="no-referrer" />`;
+  return `<button class="thumb-btn" data-id="${id || ''}" aria-label="Ver detalle"><img src="${url}" alt="${safeAlt}" class="thumb" loading="lazy" referrerpolicy="no-referrer" /></button>`;
 }
 
 function renderTableRows(data) {
@@ -64,12 +69,18 @@ function renderTableRows(data) {
     return;
   }
 
+  // Map by id for later detail lookup
+  window.__materialsById = window.__materialsById || new Map();
+
   data.forEach((item) => {
     const row = document.createElement("tr");
     const cost = item.costo_unitario != null ? Number(item.costo_unitario) : null;
     const stock = item.stock_actual != null ? Number(item.stock_actual) : 0;
+    row.dataset.idMaterial = item.id_material || "";
+    try { window.__materialsById.set(item.id_material, item); } catch {}
+    const url = item.image_url || item.storage_account;
     row.innerHTML = `
-      <td class="image-cell" data-label="Imagen">${renderImageCell(item.storage_account, item.imagen_name || item.material_name)}</td>
+      <td class="image-cell" data-label="Imagen">${renderImageCell(url, item.imagen_name || item.material_name, item.id_material)}</td>
       <td data-label="ID">${item.id_material || ""}</td>
       <td data-label="Material">${item.material_name}</td>
       <td data-label="Color">${item.color}</td>
@@ -81,19 +92,38 @@ function renderTableRows(data) {
       <td data-label="Stock" class="text-right ${stock < 0 ? "text-danger" : ""}">${stock.toLocaleString("es-ES")}</td>
     `;
     tableBody.appendChild(row);
+    // Click handler to open detail modal (row itself)
+    row.style.cursor = "pointer";
+    row.addEventListener("click", () => openDetail(item.id_material, item));
   });
 }
+
+let sortBy = "id";
+let sortDir = "asc"; // asc | desc
+let currentPage = 1;
+let perPage = 20;
+let totalItems = 0;
 
 async function fetchMaterials() {
   try {
     resultsSummary.textContent = "Consultando base de datos…";
     tableBody.innerHTML = '<tr><td colspan="10" class="empty">Cargando…</td></tr>';
-    const query = buildQueryParams();
-    const response = await fetch(`/api/materiales${query ? `?${query}` : ""}`);
+    const qp = buildQueryParams();
+    const extra = new URLSearchParams({ sort_by: sortBy, sort_dir: sortDir, page: String(currentPage), per_page: String(perPage) });
+    const qs = [qp, extra.toString()].filter(Boolean).join("&");
+    const response = await fetch(`/api/materiales${qs ? `?${qs}` : ""}`);
     const data = await response.json();
     if (data.error) throw new Error(data.error);
-    renderTableRows(data);
-    resultsSummary.textContent = `${data.length} material(es) encontrados.`;
+    const rows = Array.isArray(data) ? data : (data.data || []);
+    totalItems = Array.isArray(data) ? rows.length : (data.total ?? rows.length);
+    const totalPages = Math.max(1, Math.ceil(totalItems / perPage));
+    renderTableRows(rows);
+    resultsSummary.textContent = `${totalItems} material(es) encontrados.`;
+    // Update pager
+    if (pageInput) pageInput.value = String(currentPage);
+    if (totalPagesEl) totalPagesEl.textContent = `/ ${totalPages}`;
+    if (prevPageBtn) prevPageBtn.disabled = currentPage <= 1;
+    if (nextPageBtn) nextPageBtn.disabled = currentPage >= totalPages;
   } catch (error) {
     console.error("Error al cargar materiales", error);
     resultsSummary.textContent = "Hubo un problema al obtener los datos.";
@@ -119,4 +149,286 @@ resetButton.addEventListener("click", () => {
 
 window.addEventListener("DOMContentLoaded", () => {
   fetchFilters().then(fetchMaterials);
+  // Event delegation to ensure clicks on image/text trigger the same
+  tableBody.addEventListener("click", (e) => {
+    const thumbBtn = e.target.closest('.thumb-btn');
+    if (thumbBtn && thumbBtn.dataset.id) {
+      const id = thumbBtn.dataset.id;
+      const base = (window.__materialsById && window.__materialsById.get(id)) || {};
+      openDetail(id, base);
+      return;
+    }
+    const tr = e.target.closest("tr");
+    if (!tr || !tr.dataset.idMaterial) return;
+    const id = tr.dataset.idMaterial;
+    const base = (window.__materialsById && window.__materialsById.get(id)) || {};
+    openDetail(id, base);
+  });
+  // Pager handlers
+  perPageSelect?.addEventListener('change', () => {
+    perPage = Number(perPageSelect.value || 20) || 20;
+    currentPage = 1;
+    fetchMaterials();
+  });
+  prevPageBtn?.addEventListener('click', () => {
+    if (currentPage > 1) { currentPage -= 1; fetchMaterials(); }
+  });
+  nextPageBtn?.addEventListener('click', () => {
+    const totalPages = Math.max(1, Math.ceil(totalItems / perPage));
+    if (currentPage < totalPages) { currentPage += 1; fetchMaterials(); }
+  });
+  pageInput?.addEventListener('change', () => {
+    const totalPages = Math.max(1, Math.ceil(totalItems / perPage));
+    let p = Number(pageInput.value || 1) || 1;
+    p = Math.max(1, Math.min(totalPages, p));
+    currentPage = p;
+    fetchMaterials();
+  });
 });
+
+// ---------- Detail Modal ----------
+const modal = document.getElementById("detailModal");
+const modalClose = document.getElementById("detailClose");
+const detailTitle = document.getElementById("detailTitle");
+const detailSub = document.getElementById("detailSub");
+const detailImage = document.getElementById("detailImage");
+const obsTable = document.getElementById("obsTable");
+const chartEl = document.getElementById("chart");
+const chartCompactEl = document.getElementById("chartCompact");
+const summaryEl = document.getElementById("summary");
+const kpisEl = document.getElementById("kpis");
+const imgLightbox = document.getElementById("imgLightbox");
+const lightboxImg = document.getElementById("lightboxImg");
+const detailPreview = document.getElementById("detailPreview");
+
+modalClose?.addEventListener("click", () => hideModal());
+modal?.addEventListener("click", (e) => { if (e.target === modal) hideModal(); });
+
+function showModal() {
+  modal.classList.remove("hidden");
+  modal.setAttribute("aria-hidden", "false");
+  // Fallback display in case of stale CSS state
+  modal.style.display = 'block';
+}
+function hideModal() {
+  modal.classList.add("hidden");
+  modal.setAttribute("aria-hidden", "true");
+  modal.style.display = '';
+}
+
+async function openDetail(idMaterial, baseData) {
+  // Siempre mostrar el modal primero; luego cargar datos
+  // Header info
+  detailTitle.textContent = `${baseData?.material_name || "Material"} · ${idMaterial}`;
+  detailSub.textContent = `${baseData?.proveedor || baseData?.provider_name || ""} · ${baseData?.categoria || ""}`;
+  const imgUrl = baseData?.image_url || baseData?.storage_account || "";
+  if (imgUrl) {
+    if (detailImage) {
+      detailImage.src = imgUrl;
+      detailImage.alt = baseData?.imagen_name || baseData?.material_name || "Material";
+      detailImage.referrerPolicy = "no-referrer";
+    }
+    if (detailPreview) {
+      detailPreview.src = imgUrl;
+      detailPreview.alt = baseData?.imagen_name || baseData?.material_name || "Material";
+      detailPreview.referrerPolicy = "no-referrer";
+    }
+  } else {
+    if (detailImage) detailImage.removeAttribute("src");
+    if (detailPreview) detailPreview.removeAttribute("src");
+  }
+  if (chartEl) chartEl.innerHTML = "Cargando movimientos…";
+  if (chartCompactEl) chartCompactEl.innerHTML = "";
+  if (obsTable) obsTable.innerHTML = "";
+  if (summaryEl) summaryEl.textContent = "Cargando…";
+  if (kpisEl) kpisEl.innerHTML = "";
+  showModal();
+
+  try {
+    // Fetch detail to ensure we have image_url/provider/category fresh from DB
+    try {
+      const dres = await fetch(`/api/materiales/${encodeURIComponent(idMaterial)}`);
+      const det = await dres.json();
+      if (!det.error) {
+        detailTitle.textContent = `${det.material_name || baseData?.material_name || 'Material'} · ${idMaterial}`;
+        detailSub.textContent = `${det.provider_name || det.proveedor || ''} · ${det.categoria || ''}`;
+        const durl = det.image_url || det.storage_account;
+        if (durl) {
+          if (detailImage) {
+            detailImage.src = durl;
+            detailImage.alt = det.imagen_name || det.material_name || 'Material';
+            detailImage.referrerPolicy = 'no-referrer';
+          }
+          if (detailPreview) {
+            detailPreview.src = durl;
+            detailPreview.alt = det.imagen_name || det.material_name || 'Material';
+            detailPreview.referrerPolicy = 'no-referrer';
+          }
+        }
+      }
+    } catch {}
+
+    const res = await fetch(`/api/materiales/${encodeURIComponent(idMaterial)}/movimientos?limit=5`);
+    const movimientos = await res.json();
+    if (movimientos.error) throw new Error(movimientos.error);
+
+    // De-dup movements (avoid repeated rows)
+    const movs = Array.isArray(movimientos) ? (() => {
+      const seen = new Set();
+      const out = [];
+      for (const m of movimientos) {
+        const key = m.id_movimiento || `${m.fecha}|${m.tipo}|${m.cantidad}|${m.unidad}|${m.motivo||''}|${m.observaciones||''}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(m);
+      }
+      return out;
+    })() : [];
+
+    // Observaciones (clear to avoid duplicates)
+    if (obsTable) obsTable.innerHTML = "";
+    // Observaciones
+    if (Array.isArray(movs) && movs.length) {
+      movs.forEach((m) => {
+        const tr = document.createElement("tr");
+        const fechaTxt = m.fecha ? new Date(m.fecha).toLocaleString("es-ES") : "";
+        const cantidadTxt = (m.cantidad != null ? Number(m.cantidad) : 0).toLocaleString("es-ES");
+        tr.innerHTML = `
+          <td>${fechaTxt}</td>
+          <td>${m.tipo || ""}</td>
+          <td>${cantidadTxt} ${m.unidad || ""}</td>
+          <td>${m.motivo || ""}</td>
+          <td>${m.observaciones || ""}</td>
+        `;
+        obsTable.appendChild(tr);
+      });
+    } else {
+      const tr = document.createElement("tr");
+      tr.innerHTML = '<td colspan="5" class="empty">Sin movimientos</td>';
+      obsTable.appendChild(tr);
+    }
+
+    // Gráficas
+    if (chartEl) chartEl.innerHTML = buildMovementsChart(movs);
+    if (chartCompactEl) chartCompactEl.innerHTML = buildCompactChart(movs);
+
+    // KPIs
+    const totalSalidas = (movs || []).filter(m => (m.tipo || "").toLowerCase() === "salida")
+      .reduce((acc, m) => acc + Number(m.cantidad || 0), 0);
+    const totalEntradas = (movs || []).filter(m => (m.tipo || "").toLowerCase() === "entrada")
+      .reduce((acc, m) => acc + Number(m.cantidad || 0), 0);
+    if (summaryEl) summaryEl.textContent = `Últimos 5 · Entradas: ${totalEntradas.toLocaleString("es-ES")} · Salidas: ${totalSalidas.toLocaleString("es-ES")}`;
+    if (kpisEl) kpisEl.innerHTML = `
+      <li>Últimos 5</li>
+      <li>Entradas: <strong>${totalEntradas.toLocaleString("es-ES")}</strong></li>
+      <li>Salidas: <strong>${totalSalidas.toLocaleString("es-ES")}</strong></li>
+    `;
+  } catch (err) {
+    console.error("Detalle material", err);
+    if (chartEl) chartEl.textContent = "No fue posible cargar el detalle.";
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td colspan="5" class="empty">No fue posible cargar movimientos</td>';
+    obsTable.appendChild(tr);
+    if (summaryEl) summaryEl.textContent = "";
+  }
+}
+
+// Expose opener globally for inline usage if needed
+window.openMaterialDetail = openDetail;
+
+// Lightbox open/close
+detailImage?.addEventListener("click", () => {
+  if (!detailImage.src) return;
+  lightboxImg.src = detailImage.src;
+  imgLightbox.classList.remove("hidden");
+  imgLightbox.setAttribute("aria-hidden", "false");
+});
+detailPreview?.addEventListener("click", () => {
+  if (!detailPreview.src) return;
+  lightboxImg.src = detailPreview.src;
+  imgLightbox.classList.remove("hidden");
+  imgLightbox.setAttribute("aria-hidden", "false");
+});
+imgLightbox?.addEventListener("click", () => {
+  imgLightbox.classList.add("hidden");
+  imgLightbox.setAttribute("aria-hidden", "true");
+});
+
+function buildCompactChart(movs) {
+  if (!Array.isArray(movs) || movs.length === 0) {
+    return '<div class="empty">Sin datos</div>';
+  }
+  const data = [...movs].reverse().slice(0, 5).reverse();
+  const entradas = data.map(m => (m.tipo || "").toLowerCase() === "entrada" ? Number(m.cantidad || 0) : 0);
+  const salidas = data.map(m => (m.tipo || "").toLowerCase() === "salida" ? Number(m.cantidad || 0) : 0);
+  const width = 200, height = 160, pad = 16;
+  const n = data.length;
+  const maxVal = Math.max(1, ...entradas, ...salidas);
+  const barW = Math.floor((width - pad*2) / (n));
+
+  let rects = '';
+  for (let i = 0; i < n; i++) {
+    const eH = (entradas[i] / maxVal) * (height - pad*2);
+    const sH = (salidas[i] / maxVal) * (height - pad*2);
+    const x = pad + i * (barW + 6);
+    rects += `<rect x="${x}" y="${height - pad - eH}" width="${barW/2}" height="${Math.max(0,eH)}" fill="#10b981" rx="3" />`;
+    rects += `<rect x="${x + barW/2}" y="${height - pad - sH}" width="${barW/2}" height="${Math.max(0,sH)}" fill="#ef4444" rx="3" />`;
+  }
+  return `<svg viewBox="0 0 ${width} ${height}" width="100%" height="100%">${rects}</svg>`;
+}
+
+function buildMovementsChart(movs) {
+  if (!Array.isArray(movs) || movs.length === 0) {
+    return '<div class="empty">Sin datos</div>';
+  }
+  // Order asc by date
+  const data = [...movs].sort((a,b) => new Date(a.fecha) - new Date(b.fecha));
+  const labels = data.map(m => new Date(m.fecha));
+  const entradas = data.map(m => (m.tipo || "").toLowerCase() === "entrada" ? Number(m.cantidad || 0) : 0);
+  const salidas = data.map(m => (m.tipo || "").toLowerCase() === "salida" ? Number(m.cantidad || 0) : 0);
+
+  // Vertical bars (fecha en X)
+  const width = 680, height = 300, padX = 40, padY = 30;
+  const n = data.length;
+  const maxVal = Math.max(1, ...entradas, ...salidas);
+  const groupW = Math.floor((width - padX*2) / n);
+  const barW = Math.max(10, Math.floor((groupW - 8) / 2));
+
+  const yScale = (val) => padY + (1 - val / maxVal) * (height - padY*2);
+  const xFor = (i, seriesIdx) => padX + i * groupW + seriesIdx * (barW + 4);
+  const fmtDate = (d) => d.toLocaleDateString("es-ES", { month: "2-digit", day: "2-digit" });
+
+  let parts = '';
+  for (let i = 0; i < n; i++) {
+    const eH = height - padY - yScale(entradas[i]);
+    const sH = height - padY - yScale(salidas[i]);
+    const ex = xFor(i, 0);
+    const sx = xFor(i, 1);
+    const baseY = height - padY;
+    parts += `<rect x="${ex}" y="${yScale(entradas[i])}" width="${barW}" height="${Math.max(0,eH)}" fill="#10b981" rx="4" />`;
+    parts += `<rect x="${sx}" y="${yScale(salidas[i])}" width="${barW}" height="${Math.max(0,sH)}" fill="#ef4444" rx="4" />`;
+    const lx = padX + i * groupW + barW;
+    parts += `<text x="${lx}" y="${height - 8}" text-anchor="middle" font-size="11" fill="#64748b">${fmtDate(labels[i])}</text>`;
+  }
+  // Axis line
+  parts += `<line x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}" stroke="#cbd5e1" />`;
+  return `<svg viewBox="0 0 ${width} ${height}" width="100%" height="100%">${parts}</svg>`;
+}
+
+// Sorting handlers
+const thSortId = document.getElementById("thSortId");
+const thSortStock = document.getElementById("thSortStock");
+
+function toggleSort(target) {
+  const sort = target.dataset.sort;
+  if (sortBy === sort) {
+    sortDir = sortDir === "asc" ? "desc" : "asc";
+  } else {
+    sortBy = sort;
+    sortDir = "asc";
+  }
+  fetchMaterials();
+}
+
+thSortId?.addEventListener("click", () => toggleSort(thSortId));
+thSortStock?.addEventListener("click", () => toggleSort(thSortStock));

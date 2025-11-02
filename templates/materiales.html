@@ -61,7 +61,7 @@
             <thead>
               <tr>
                 <th>Imagen</th>
-                <th>ID</th>
+                <th id="thSortId" class="sortable" data-sort="id">ID</th>
                 <th>Material</th>
                 <th>Color</th>
                 <th>Tipo</th>
@@ -69,7 +69,7 @@
                 <th>Proveedor</th>
                 <th>Unidad</th>
                 <th class="text-right">Costo unitario</th>
-                <th class="text-right">Stock</th>
+                <th id="thSortStock" class="text-right sortable" data-sort="stock">Stock</th>
               </tr>
             </thead>
             <tbody id="materialsTableBody">
@@ -79,8 +79,85 @@
             </tbody>
           </table>
         </div>
+        <div class="pagination">
+          <div class="pager-left">
+            <label>Por página
+              <select id="perPage">
+                <option value="10">10</option>
+                <option value="20" selected>20</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+            </label>
+          </div>
+          <div class="pager-right">
+            <button id="prevPage" class="button button-muted" type="button">Anterior</button>
+            <input id="pageInput" type="number" min="1" value="1" />
+            <span id="totalPages">/ 1</span>
+            <button id="nextPage" class="button button-muted" type="button">Siguiente</button>
+          </div>
+        </div>
       </section>
     </main>
+
+    <!-- Modal de Detalle -->
+    <div id="detailModal" class="modal hidden" aria-hidden="true">
+      <div class="modal__backdrop"></div>
+      <div class="modal__content" role="dialog" aria-modal="true" aria-labelledby="detailTitle">
+        <header class="modal__header">
+          <div class="material-header">
+            <div>
+              <h3 id="detailTitle">Material</h3>
+              <p id="detailSub" class="muted"></p>
+            </div>
+          </div>
+          <button id="detailClose" class="button button-muted" type="button">Cerrar</button>
+        </header>
+        <section class="modal__body">
+          <div class="detail-layout">
+            <aside class="card aside">
+              <h4>Imagen</h4>
+              <div class="preview">
+                <img id="detailPreview" class="preview-img" alt="Vista material" />
+              </div>
+              <ul class="kpis" id="kpis"></ul>
+              <p class="muted" id="summary"></p>
+            </aside>
+            <div class="main">
+              <div class="card">
+                <h4>Gráfica</h4>
+                <div class="chart-scroll">
+                  <div id="chart" class="chart large"></div>
+                </div>
+              </div>
+              <div class="card">
+                <h4>Observaciones</h4>
+                <div class="table-scroll">
+                  <table class="mini">
+                    <thead>
+                      <tr>
+                        <th>Fecha</th>
+                        <th>Tipo</th>
+                        <th>Cant.</th>
+                        <th>Motivo</th>
+                        <th>Obs.</th>
+                      </tr>
+                    </thead>
+                    <tbody id="obsTable"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- Lightbox para ampliar imagen -->
+    <div id="imgLightbox" class="lightbox hidden" aria-hidden="true">
+      <div class="modal__backdrop"></div>
+      <img id="lightboxImg" alt="Imagen material" />
+    </div>
 
     <footer class="page-footer">
       <p>

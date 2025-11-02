@@ -5,6 +5,7 @@ from typing import Any, Dict, List
 from flask import Flask, jsonify, render_template, request
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from datetime import datetime
 
 
 def get_database_url() -> str:
@@ -149,8 +150,15 @@ def fetch_stock_summary(filters: Dict[str, str]) -> List[Dict[str, Any]]:
     ]
 
 
-def fetch_material_list(filters: Dict[str, str]) -> List[Dict[str, Any]]:
-    """Fetch materials from the database view with provider and image URL."""
+def fetch_material_list(
+    filters: Dict[str, str],
+    sort_by: str | None = None,
+    sort_dir: str | None = None,
+) -> List[Dict[str, Any]]:
+    """Fetch materials from the database view with provider and image URL.
+
+    Supports sorting by: id (id_material), stock (stock_actual), name (material_name).
+    """
     where_clauses = []
     params: List[Any] = []
 
@@ -172,6 +180,15 @@ def fetch_material_list(filters: Dict[str, str]) -> List[Dict[str, Any]]:
     if where_clauses:
         where_sql = "WHERE " + " AND ".join(where_clauses)
 
+    # Sort handling (whitelist to avoid SQL injection)
+    sort_map = {
+        "id": "id_material",
+        "stock": "stock_actual",
+        "name": "material_name",
+    }
+    order_expr = sort_map.get((sort_by or "").lower(), "id_material")
+    direction = "DESC" if (sort_dir or "").lower() == "desc" else "ASC"
+
     query = f"""
         SELECT
             id_material,
@@ -184,10 +201,16 @@ def fetch_material_list(filters: Dict[str, str]) -> List[Dict[str, Any]]:
             costo_unitario,
             COALESCE(NULLIF(TRIM(imagen_name), ''), '') AS imagen_name,
             COALESCE(NULLIF(TRIM(storage_account), ''), '') AS storage_account,
+            CASE
+                WHEN COALESCE(NULLIF(TRIM(storage_account), ''), '') ~* '^(http|https)://' THEN COALESCE(NULLIF(TRIM(storage_account), ''), '')
+                WHEN COALESCE(NULLIF(TRIM(storage_account), ''), '') <> '' AND COALESCE(NULLIF(TRIM(imagen_name), ''), '') <> '' THEN
+                    COALESCE(NULLIF(TRIM(storage_account), ''), '') || '/' || COALESCE(NULLIF(TRIM(imagen_name), ''), '')
+                ELSE COALESCE(NULLIF(TRIM(storage_account), ''), '')
+            END AS image_url,
             COALESCE(stock_actual, 0) AS stock_actual
         FROM vista_materiales_proveedores
         {where_sql}
-        ORDER BY material_name
+        ORDER BY {order_expr} {direction}, id_material ASC
     """
 
     with get_connection() as conn, conn.cursor() as cur:
@@ -207,6 +230,155 @@ def fetch_material_list(filters: Dict[str, str]) -> List[Dict[str, Any]]:
         {key: normalize_value(value) for key, value in row.items()}
         for row in rows
     ]
+
+
+def fetch_material_list_with_total(
+    filters: Dict[str, str],
+    sort_by: str | None,
+    sort_dir: str | None,
+    page: int,
+    per_page: int,
+) -> Dict[str, Any]:
+    """Fetch paginated materials and total count."""
+    where_clauses = []
+    params: List[Any] = []
+
+    mapping = {
+        "material_name": ("COALESCE(NULLIF(TRIM(material_name), ''), 'Sin nombre')", "ILIKE"),
+        "color": ("COALESCE(NULLIF(TRIM(color), ''), 'Sin color')", "ILIKE"),
+        "tipo": ("COALESCE(NULLIF(TRIM(tipo), ''), 'Sin tipo')", "ILIKE"),
+        "categoria": ("COALESCE(NULLIF(TRIM(categoria), ''), 'Sin categoría')", "ILIKE"),
+        "provider_name": ("COALESCE(NULLIF(TRIM(proveedor), ''), 'Sin proveedor')", "ILIKE"),
+    }
+
+    for key, value in filters.items():
+        if value and key in mapping:
+            expression, operator = mapping[key]
+            where_clauses.append(f"{expression} {operator} %s")
+            params.append(f"%{value}%")
+
+    where_sql = ""
+    if where_clauses:
+        where_sql = "WHERE " + " AND ".join(where_clauses)
+
+    sort_map = {
+        "id": "id_material",
+        "stock": "stock_actual",
+        "name": "material_name",
+    }
+    order_expr = sort_map.get((sort_by or "").lower(), "id_material")
+    direction = "DESC" if (sort_dir or "").lower() == "desc" else "ASC"
+
+    # Total count
+    count_sql = f"SELECT COUNT(*) AS total FROM vista_materiales_proveedores {where_sql}"
+
+    offset = max(0, (page - 1) * per_page)
+    data_sql = f"""
+        SELECT
+            id_material,
+            COALESCE(NULLIF(TRIM(material_name), ''), 'Sin nombre') AS material_name,
+            COALESCE(NULLIF(TRIM(color), ''), 'Sin color') AS color,
+            COALESCE(NULLIF(TRIM(tipo), ''), 'Sin tipo') AS tipo,
+            COALESCE(NULLIF(TRIM(categoria), ''), 'Sin categoría') AS categoria,
+            COALESCE(NULLIF(TRIM(proveedor), ''), 'Sin proveedor') AS provider_name,
+            COALESCE(NULLIF(TRIM(unidad), ''), '') AS unidad,
+            costo_unitario,
+            COALESCE(NULLIF(TRIM(imagen_name), ''), '') AS imagen_name,
+            COALESCE(NULLIF(TRIM(storage_account), ''), '') AS storage_account,
+            CASE
+                WHEN COALESCE(NULLIF(TRIM(storage_account), ''), '') ~* '^(http|https)://' THEN COALESCE(NULLIF(TRIM(storage_account), ''), '')
+                WHEN COALESCE(NULLIF(TRIM(storage_account), ''), '') <> '' AND COALESCE(NULLIF(TRIM(imagen_name), ''), '') <> '' THEN
+                    COALESCE(NULLIF(TRIM(storage_account), ''), '') || '/' || COALESCE(NULLIF(TRIM(imagen_name), ''), '')
+                ELSE COALESCE(NULLIF(TRIM(storage_account), ''), '')
+            END AS image_url,
+            COALESCE(stock_actual, 0) AS stock_actual
+        FROM vista_materiales_proveedores
+        {where_sql}
+        ORDER BY {order_expr} {direction}, id_material ASC
+        LIMIT %s OFFSET %s
+    """
+
+    with get_connection() as conn, conn.cursor() as cur:
+        # total
+        cur.execute(count_sql, params)
+        total = int(cur.fetchone()["total"])
+        # page data
+        cur.execute(data_sql, params + [per_page, offset])
+        rows = list(cur.fetchall())
+
+    return {
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "data": [
+            {key: normalize_value(value) for key, value in row.items()}
+            for row in rows
+        ],
+    }
+
+
+def normalize_value(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, list):
+        return [normalize_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: normalize_value(item) for key, item in value.items()}
+    return value
+
+
+def fetch_material_detail(material_id: str) -> Dict[str, Any] | None:
+    """Fetch single material info from the view by id."""
+    query = """
+        SELECT
+            id_material,
+            COALESCE(NULLIF(TRIM(material_name), ''), 'Sin nombre') AS material_name,
+            COALESCE(NULLIF(TRIM(color), ''), 'Sin color') AS color,
+            COALESCE(NULLIF(TRIM(tipo), ''), 'Sin tipo') AS tipo,
+            COALESCE(NULLIF(TRIM(categoria), ''), 'Sin categoría') AS categoria,
+            COALESCE(NULLIF(TRIM(proveedor), ''), 'Sin proveedor') AS provider_name,
+            COALESCE(NULLIF(TRIM(unidad), ''), '') AS unidad,
+            costo_unitario,
+            COALESCE(NULLIF(TRIM(imagen_name), ''), '') AS imagen_name,
+            COALESCE(NULLIF(TRIM(storage_account), ''), '') AS storage_account,
+            CASE
+                WHEN COALESCE(NULLIF(TRIM(storage_account), ''), '') ~* '^(http|https)://' THEN COALESCE(NULLIF(TRIM(storage_account), ''), '')
+                WHEN COALESCE(NULLIF(TRIM(storage_account), ''), '') <> '' AND COALESCE(NULLIF(TRIM(imagen_name), ''), '') <> '' THEN
+                    COALESCE(NULLIF(TRIM(storage_account), ''), '') || '/' || COALESCE(NULLIF(TRIM(imagen_name), ''), '')
+                ELSE COALESCE(NULLIF(TRIM(storage_account), ''), '')
+            END AS image_url,
+            COALESCE(stock_actual, 0) AS stock_actual
+        FROM vista_materiales_proveedores
+        WHERE id_material = %s
+        LIMIT 1
+    """
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(query, (material_id,))
+        row = cur.fetchone()
+        if not row:
+            return None
+        return {key: normalize_value(value) for key, value in row.items()}
+
+
+def fetch_material_movements(material_id: str, limit: int = 5) -> List[Dict[str, Any]]:
+    """Fetch last N movements for a material from vista_movimientos."""
+    query = """
+        SELECT id_movimiento, fecha, tipo, id_material, cantidad, unidad, motivo, observaciones
+        FROM vista_movimientos
+        WHERE id_material = %s
+        ORDER BY fecha DESC
+        LIMIT %s
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(query, (material_id, limit))
+        rows = cur.fetchall()
+        return [
+            {key: normalize_value(value) for key, value in row.items()}
+            for row in rows
+        ]
 
 
 app = Flask(__name__)
@@ -261,11 +433,40 @@ def api_materiales():
         "categoria": request.args.get("categoria", type=str, default=""),
         "provider_name": request.args.get("provider_name", type=str, default=""),
     }
+    sort_by = request.args.get("sort_by", type=str, default="id")
+    sort_dir = request.args.get("sort_dir", type=str, default="asc")
+    page = request.args.get("page", type=int, default=1)
+    per_page = request.args.get("per_page", type=int, default=20)
 
     try:
-        data = fetch_material_list(filters)
-        return jsonify(data)
+        result = fetch_material_list_with_total(
+            filters, sort_by=sort_by, sort_dir=sort_dir, page=max(1, page), per_page=max(1, min(per_page, 200))
+        )
+        return jsonify(result)
     except Exception as exc:  # pragma: no cover - used for runtime error reporting
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/materiales/<material_id>")
+def api_material_detail(material_id: str):
+    """Return a single material info (for detail modal header)."""
+    try:
+        detail = fetch_material_detail(material_id)
+        if not detail:
+            return jsonify({"error": "Material no encontrado"}), 404
+        return jsonify(detail)
+    except Exception as exc:  # pragma: no cover
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/materiales/<material_id>/movimientos")
+def api_material_movements(material_id: str):
+    """Return last movements for a material from vista_movimientos."""
+    try:
+        limit = request.args.get("limit", default=5, type=int)
+        data = fetch_material_movements(material_id, limit=limit)
+        return jsonify(data)
+    except Exception as exc:  # pragma: no cover
         return jsonify({"error": str(exc)}), 500
 
 
