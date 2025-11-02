@@ -32,6 +32,28 @@ flask --app app run --debug
 
 La aplicación quedará disponible en [http://localhost:5000](http://localhost:5000).
 
+## Ejecutar con Docker
+
+Construye la imagen:
+
+```bash
+docker build -t cojines-materiales:latest .
+```
+
+Ejecuta el contenedor indicando tu conexión a PostgreSQL mediante `DATABASE_URL` y exponiendo el puerto:
+
+```bash
+docker run --rm \
+  -e DATABASE_URL="postgresql://usuario:clave@host:5432/cojines" \
+  -e PORT=5000 \
+  -p 5000:5000 \
+  cojines-materiales:latest
+```
+
+- La app quedará disponible en `http://localhost:5000`.
+- Puedes cambiar el puerto externo (`-p 8080:5000`) o el interno con `-e PORT`.
+- La imagen usa Gunicorn si está disponible; en caso contrario usa el server de Flask.
+
 ## Endpoints disponibles
 
 - `GET /api/filters`: devuelve listas de valores para poblar los filtros del dashboard.
@@ -53,3 +75,45 @@ templates/           # Plantillas HTML
 - El cálculo del stock utiliza la diferencia entre las cantidades de entradas y salidas.
 - Los nombres de proveedores se obtienen directamente desde la tabla `tbl_proveedores`.
 - Los filtros buscan coincidencias parciales (uso de `ILIKE`) para facilitar la búsqueda.
+- Los filtros del listado aceptan múltiples valores por clave (p. ej., `?tipo=Tela&tipo=relleno`).
+
+## Tablas y vistas usadas (PostgreSQL)
+
+La aplicación consulta los siguientes objetos de base de datos. Entre paréntesis se indica el campo esperado por la app cuando es relevante.
+
+- Tablas base
+  - `public.tbl_materiales`
+    - Campos usados: `id_material`, `material_name`, `color`, `tipo`, `unidad`, `costo_unitario`, `categoria`, `proveedor`, `imagen_name`, `storage_account`, (opcional) `observaciones`.
+  - `public.tbl_proveedores`
+    - Campos usados: `id_proveedor`, `nombre_empresa`.
+  - `public.tbl_movimientos`
+    - Campos usados por la vista de movimientos: `id_movimiento`, `fecha`, `tipo`, `id_material`, `cantidad`, `unidad`, `motivo`, `observaciones`.
+
+- Vistas requeridas
+  - `public.vista_materiales_proveedores`
+    - Une materiales con proveedor y resume el stock actual.
+    - Campos esperados por la app: `id_material`, `material_name`, `color`, `tipo`, `unidad`, `costo_unitario`, `proveedor` (o `provider_name`), `categoria`, `imagen_name`, `storage_account`, `stock_actual`.
+    - La app construye `image_url` a partir de `storage_account` y `imagen_name` cuando `storage_account` no es una URL completa.
+  - `public.vista_movimientos`
+    - Vista de conveniencia para los últimos movimientos por material. Definición sugerida:
+      ```sql
+      CREATE VIEW public.vista_movimientos AS
+      SELECT 
+          id_movimiento,
+          fecha,
+          tipo,
+          id_material,
+          cantidad,
+          unidad,
+          motivo,
+          observaciones
+      FROM public.tbl_movimientos
+      ORDER BY fecha DESC;
+      ```
+    - La app consume `GET /api/materiales/{id}/movimientos?limit=5` sobre esta vista.
+  - `public.vista_movimientos_materiales` (opcional para el tablero de stock)
+    - Si utilizas la página de “Resumen de stock”, esta vista debe exponer al menos: `id_material`, `tipo` (entrada/salida), `cantidad`. La app agrega por `id_material` y `tipo`.
+
+Notas de compatibilidad
+- Los nombres y tipos deben coincidir; si tus vistas devuelven alias diferentes (p. ej., `provider_name` en vez de `proveedor`), mantén ambos o ajusta el SELECT en `app.py`.
+- `tipo` en movimientos debe contener valores comparables en minúsculas (`entrada`/`salida`) o se normaliza con `LOWER(tipo)`.
