@@ -7,7 +7,7 @@ services:
     ports:
       - "5000:5000"
     environment:
-      DATABASE_URL: postgresql://admin:admin123@172.21.0.8:5432/cojines
+      DATABASE_URL: postgresql://admin:admin123@postgres_dev:5432/cojines
       PORT: 5000
     networks:
       cojines_net:
