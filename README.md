@@ -54,6 +54,35 @@ docker run --rm \
 - Puedes cambiar el puerto externo (`-p 8080:5000`) o el interno con `-e PORT`.
 - La imagen usa Gunicorn si está disponible; en caso contrario usa el server de Flask.
 
+## Ejecutar con Docker Compose
+
+Incluí `docker-compose.yml` para levantar la app junto a una base de datos Postgres local.
+
+1) Levantar los servicios (app + db):
+
+```bash
+docker compose up --build
+```
+
+2) Variables que puedes ajustar (opcional, vía `.env` o al ejecutar):
+
+- `HOST_PORT` (por defecto 5000): puerto en tu host.
+- `PORT` (por defecto 5000): puerto interno del contenedor web.
+- `POSTGRES_DB` (por defecto cojines)
+- `POSTGRES_USER` (por defecto admin)
+- `POSTGRES_PASSWORD` (por defecto admin123)
+- `DB_PORT` (por defecto 5432)
+- `DATABASE_URL` (por defecto `postgresql://admin:admin123@db:5432/cojines` apuntando al servicio `db`).
+
+3) Acceso
+
+- App: http://localhost:5000
+- Postgres: localhost:5432 (usuario/clave definidos arriba)
+
+4) Datos persistentes
+
+- El volumen `pgdata` persiste los datos de Postgres entre reinicios.
+
 ## Endpoints disponibles
 
 - `GET /api/filters`: devuelve listas de valores para poblar los filtros del dashboard.

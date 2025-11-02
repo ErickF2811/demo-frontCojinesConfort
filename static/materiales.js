@@ -300,7 +300,17 @@ const lightboxImg = document.getElementById("lightboxImg");
 const detailPreview = document.getElementById("detailPreview");
 
 modalClose?.addEventListener("click", () => hideModal());
-modal?.addEventListener("click", (e) => { if (e.target === modal) hideModal(); });
+// Cerrar al hacer clic fuera de la tarjeta (en el fondo) o en el contenedor modal
+modal?.addEventListener("click", (e) => {
+  const t = e.target;
+  if (t === modal || (t?.classList && t.classList.contains("modal__backdrop"))) {
+    hideModal();
+  }
+});
+// Cerrar con tecla Escape
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !modal.classList.contains("hidden")) hideModal();
+});
 
 function showModal() {
   modal.classList.remove("hidden");
@@ -421,6 +431,26 @@ async function openDetail(idMaterial, baseData) {
       <li>Entradas: <strong>${totalEntradas.toLocaleString("es-ES")}</strong></li>
       <li>Salidas: <strong>${totalSalidas.toLocaleString("es-ES")}</strong></li>
     `;
+
+    // Fundas (únicas en últimos 5)
+    const fundasList = document.getElementById("fundasList");
+    if (fundasList) {
+      fundasList.innerHTML = '';
+      const fundas = Array.from(new Set((movs || []).map(m => (m.funda || '').trim()).filter(Boolean)));
+      if (fundas.length === 0) {
+        const span = document.createElement('span');
+        span.className = 'muted';
+        span.textContent = 'Sin fundas';
+        fundasList.appendChild(span);
+      } else {
+        fundas.forEach(f => {
+          const tag = document.createElement('span');
+          tag.className = 'tag';
+          tag.textContent = f;
+          fundasList.appendChild(tag);
+        });
+      }
+    }
   } catch (err) {
     console.error("Detalle material", err);
     if (chartEl) chartEl.textContent = "No fue posible cargar el detalle.";

@@ -9,13 +9,16 @@ from datetime import datetime
 
 
 def get_database_url() -> str:
-    """Return the database connection string from the environment."""
-    database_url = "postgresql://admin:admin123@172.21.0.8:5432/cojines"
+    """Return the database connection string from the environment.
+
+    Reads `DATABASE_URL`. Raise a clear error if not present.
+    Example format: postgresql://user:password@hostname:5432/database
+    """
+    database_url = os.environ.get("DATABASE_URL", "").strip()
     if not database_url:
         raise RuntimeError(
-            "DATABASE_URL environment variable is not set. Please provide a valid "
-            "PostgreSQL connection string, for example: "
-            "postgresql://user:password@hostname:port/database"
+            "DATABASE_URL is not set. Provide a valid PostgreSQL URL, e.g. "
+            "postgresql://user:password@hostname:5432/database"
         )
     return database_url
 
@@ -371,7 +374,7 @@ def fetch_material_detail(material_id: str) -> Dict[str, Any] | None:
 def fetch_material_movements(material_id: str, limit: int = 5) -> List[Dict[str, Any]]:
     """Fetch last N movements for a material from vista_movimientos."""
     query = """
-        SELECT id_movimiento, fecha, tipo, id_material, cantidad, unidad, motivo, observaciones
+        SELECT id_movimiento, fecha, tipo, id_material, cantidad, unidad, motivo, observaciones, funda
         FROM vista_movimientos
         WHERE id_material = %s
         ORDER BY fecha DESC
