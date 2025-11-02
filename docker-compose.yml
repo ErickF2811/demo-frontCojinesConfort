@@ -4,33 +4,8 @@ services:
   web:
     build: .
     container_name: cojines-web
-    environment:
-      # Usa variables de entorno o los valores por defecto para desarrollo
-      DATABASE_URL: ${DATABASE_URL:-postgresql://admin:admin123@db:5432/cojines}
-      PORT: ${PORT:-5000}
     ports:
-      - "${HOST_PORT:-5000}:5000"
-    depends_on:
-      db:
-        condition: service_healthy
-
-  db:
-    image: postgres:15
-    container_name: cojines-db
+      - "5000:5000"
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-cojines}
-      POSTGRES_USER: ${POSTGRES_USER:-admin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin123}
-    ports:
-      - "${DB_PORT:-5432}:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
-volumes:
-  pgdata:
-
+      DATABASE_URL: postgresql://admin:admin123@172.21.0.8:5432/cojines
+      PORT: 5000

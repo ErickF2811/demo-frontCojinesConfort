@@ -25,8 +25,8 @@ COPY . .
 
 # Default envs (can be overridden at runtime)
 ENV PORT=5000 \
-    FLASK_ENV=production \
-    DATABASE_URL="postgresql://admin:admin123@172.21.0.8:5432/cojines"
+    FLASK_ENV=production 
+    # DATABASE_URL="postgresql://admin:admin123@172.21.0.8:5432/cojines"
 
 EXPOSE 5000
 
