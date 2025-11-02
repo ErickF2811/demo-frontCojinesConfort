@@ -25,6 +25,33 @@ export DATABASE_URL="postgresql://admin:admin@postgre_dev:5432/cojines"
 $env:DATABASE_URL= "postgresql://admin:admin@postgre_dev/cojines"
 ```
 
+### Variables de entorno adicionales
+
+La aplicación consume otras variables para el chat y Azure Blob Storage:
+
+- `CHAT_WEBHOOK_URL`: URL del webhook que recibe los mensajes del widget de chat. Si no se define, se usa el endpoint de pruebas configurado en el código.
+- `AZURE_BLOB_CONNECTION_STRING`: cadena de conexión del Storage Account donde se guardan los adjuntos enviados desde el chat.
+- `AZURE_BLOB_CONTAINER`: contenedor destino en Azure Blob (por defecto `blobchat`).
+- `AZURE_BLOB_CATALOG_CONTAINER`: contenedor donde se almacenan los catálogos PDF (por defecto `blobcatalogos`).
+
+Ejemplo (PowerShell):
+
+```powershell
+$env:CHAT_WEBHOOK_URL = "https://tu-servidor/webhook"
+$env:AZURE_BLOB_CONNECTION_STRING = "DefaultEndpointsProtocol=...;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net"
+$env:AZURE_BLOB_CONTAINER = "blobchat"
+$env:AZURE_BLOB_CATALOG_CONTAINER = "blobcatalogos"
+```
+
+En Bash:
+
+```bash
+export CHAT_WEBHOOK_URL="https://tu-servidor/webhook"
+export AZURE_BLOB_CONNECTION_STRING="DefaultEndpointsProtocol=...;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net"
+export AZURE_BLOB_CONTAINER="blobchat"
+export AZURE_BLOB_CATALOG_CONTAINER="blobcatalogos"
+```
+
 ## Ejecutar el servidor
 
 ```bash
@@ -157,4 +184,3 @@ docker build -t ${IMAGE_NAME}:${VERSION} .
 docker tag ${IMAGE_NAME}:${VERSION} ${REGISTRY_USER}/${IMAGE_NAME}:${VERSION}
 docker push ${REGISTRY_USER}/${IMAGE_NAME}:${VERSION}
 ```
-

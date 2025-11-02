@@ -1,4 +1,4 @@
-const filtersForm = document.getElementById("filtersForm");
+﻿const filtersForm = document.getElementById("filtersForm");
 const refreshButton = document.getElementById("refreshButton");
 const resetButton = document.getElementById("resetFilters");
 const resultsSummary = document.getElementById("resultsSummary");
@@ -10,6 +10,19 @@ const pageInput = document.getElementById("pageInput");
 const totalPagesEl = document.getElementById("totalPages");
 const tableCard = document.querySelector('.table-card');
 const mobileMediaQuery = window.matchMedia('(max-width: 640px)');
+const tabButtons = document.querySelectorAll("[data-tab-target]");
+const tabPanels = document.querySelectorAll("[data-tab-panel]");
+const catalogUploadForm = document.getElementById("catalogUploadForm");
+const catalogFileInput = document.getElementById("catalogFile");
+const catalogFileLabel = document.getElementById("catalogFileLabel");
+const catalogStatus = document.getElementById("catalogStatus");
+const catalogListEl = document.getElementById("catalogList");
+const catalogRefreshBtn = document.getElementById("catalogRefresh");
+const catalogClearBtn = document.getElementById("catalogClear");
+const catalogNameInput = document.getElementById("catalogName");
+const catalogDescriptionInput = document.getElementById("catalogDescription");
+const catalogCollectionInput = document.getElementById("catalogCollection");
+const catalogStackInput = document.getElementById("catalogStack");
 
 
 function syncMobileLayoutClass() {
@@ -198,6 +211,224 @@ async function fetchMaterials() {
   }
 }
 
+let catalogsLoaded = false;
+
+function setActiveTab(target) {
+  tabButtons.forEach((btn) => {
+    const isActive = btn.dataset.tabTarget === target;
+    btn.classList.toggle("is-active", isActive);
+  });
+  tabPanels.forEach((panel) => {
+    const match = panel.dataset.tabPanel === target;
+    panel.classList.toggle("tab-panel--active", match);
+    if (match) {
+      panel.removeAttribute("hidden");
+    } else {
+      panel.setAttribute("hidden", "true");
+    }
+  });
+  if (target === "catalogs" && !catalogsLoaded) {
+    fetchCatalogs();
+  }
+}
+
+function formatBytes(bytes) {
+  if (bytes === null || bytes === undefined) return "";
+  if (bytes === 0) return "0 KB";
+  const units = ["bytes", "KB", "MB", "GB"];
+  let value = bytes;
+  let index = 0;
+  while (value >= 1024 && index < units.length - 1) {
+    value /= 1024;
+    index += 1;
+  }
+  return index === 0 ? `${value} ${units[index]}` : `${value.toFixed(1)} ${units[index]}`;
+}
+
+function formatDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleString("es-ES");
+}
+
+async function fetchCatalogs() {
+  if (!catalogListEl) return;
+  catalogListEl.innerHTML = '<p class="empty">Cargando catálogos…</p>';
+  try {
+    const response = await fetch("/api/catalogs");
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "No se pudo obtener la lista de catálogos.");
+    const catalogs = Array.isArray(data.catalogs) ? data.catalogs : [];
+    if (!catalogs.length) {
+      catalogListEl.innerHTML = '<p class="empty">No hay catálogos disponibles.</p>';
+      if (catalogStatus && catalogStatus.dataset.state === "error") {
+        catalogStatus.textContent = "";
+        catalogStatus.style.color = "#475569";
+        delete catalogStatus.dataset.state;
+      }
+      catalogsLoaded = true;
+      return;
+    }
+    const fragment = document.createDocumentFragment();
+    catalogs.forEach((item) => {
+      const card = document.createElement("article");
+      card.className = "catalog-item";
+
+      const info = document.createElement("div");
+      info.className = "catalog-item__info";
+
+      const title = document.createElement("span");
+      title.className = "catalog-item__title";
+      title.textContent = item.catalog_name || item.display_name || item.name;
+      if (item.stack) {
+        const badge = document.createElement("span");
+        badge.className = "catalog-item__badge";
+        badge.textContent = "Destacado";
+        title.appendChild(document.createTextNode(" "));
+        title.appendChild(badge);
+      }
+
+      const meta = document.createElement("span");
+      meta.className = "catalog-item__meta";
+      const metaParts = [];
+      const sizeTxt = item.size != null ? formatBytes(item.size) : "";
+      const dateTxt = formatDate(item.created_at || item.last_modified);
+      if (item.collection) metaParts.push(`Colección: ${item.collection}`);
+      if (sizeTxt) metaParts.push(sizeTxt);
+      if (dateTxt) metaParts.push(dateTxt);
+      meta.textContent = metaParts.join(" · ") || "";
+
+      info.appendChild(title);
+      info.appendChild(meta);
+
+      if (item.description) {
+        const desc = document.createElement("p");
+        desc.className = "catalog-item__desc";
+        desc.textContent = item.description;
+        info.appendChild(desc);
+      }
+
+      const actions = document.createElement("div");
+      actions.className = "catalog-item__actions";
+
+      const link = document.createElement("a");
+      link.className = "catalog-item__link";
+      link.href = item.url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = "Ver PDF";
+
+      const stackLabel = document.createElement("label");
+      stackLabel.className = "catalog-item__stack";
+      stackLabel.innerHTML = `<input type="radio" name="catalogStack" value="${item.catalog_id}" ${item.stack ? "checked" : ""}> Destacar`;
+
+      actions.appendChild(link);
+      actions.appendChild(stackLabel);
+
+      card.appendChild(info);
+      card.appendChild(actions);
+      fragment.appendChild(card);
+    });
+    catalogListEl.innerHTML = "";
+    catalogListEl.appendChild(fragment);
+    catalogsLoaded = true;
+    if (catalogStatus && catalogStatus.dataset.state === "error") {
+      catalogStatus.textContent = "";
+      catalogStatus.style.color = "#475569";
+      delete catalogStatus.dataset.state;
+    }
+  } catch (error) {
+    console.error("Catálogos", error);
+    catalogListEl.innerHTML = '<p class="empty">No se pudieron cargar los catálogos.</p>';
+    catalogsLoaded = false;
+    if (catalogStatus) {
+      catalogStatus.textContent = error.message || "No se pudieron cargar los catálogos.";
+      catalogStatus.style.color = "#b91c1c";
+      catalogStatus.dataset.state = "error";
+    }
+  }
+}
+
+async function handleCatalogUpload(event) {
+  event.preventDefault();
+  const name = catalogNameInput?.value.trim() || "";
+  const description = catalogDescriptionInput?.value.trim() || "";
+  const collection = catalogCollectionInput?.value.trim() || "";
+  const stackSelected = !!catalogStackInput?.checked;
+
+  if (!name) {
+    if (catalogStatus) {
+      catalogStatus.textContent = "Ingresa un nombre para el catálogo.";
+      catalogStatus.style.color = "#b91c1c";
+      catalogStatus.dataset.state = "error";
+    }
+    return;
+  }
+  if (!description) {
+    if (catalogStatus) {
+      catalogStatus.textContent = "Ingresa una descripción para el catálogo.";
+      catalogStatus.style.color = "#b91c1c";
+      catalogStatus.dataset.state = "error";
+    }
+    return;
+  }
+  if (!catalogFileInput || !catalogFileInput.files?.length) {
+    if (catalogStatus) {
+      catalogStatus.textContent = "Selecciona un archivo PDF.";
+      catalogStatus.style.color = "#b91c1c";
+      catalogStatus.dataset.state = "error";
+    }
+    return;
+  }
+  const file = catalogFileInput.files[0];
+  if (file.type && !file.type.toLowerCase().includes("pdf")) {
+    if (catalogStatus) {
+      catalogStatus.textContent = "Solo se permiten archivos PDF.";
+      catalogStatus.style.color = "#b91c1c";
+      catalogStatus.dataset.state = "error";
+    }
+    return;
+  }
+  const formData = new FormData();
+  formData.append("catalog_name", name);
+  formData.append("description", description);
+  formData.append("collection", collection);
+  formData.append("stack", stackSelected ? "1" : "0");
+  formData.append("file", file);
+  if (catalogStatus) {
+    catalogStatus.textContent = "Subiendo catálogo…";
+    catalogStatus.style.color = "#475569";
+    catalogStatus.dataset.state = "info";
+  }
+  try {
+    const response = await fetch("/api/catalogs", {
+      method: "POST",
+      body: formData,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "No se pudo subir el catálogo.");
+    if (catalogStatus) {
+      catalogStatus.textContent = data.message || "Catálogo subido correctamente.";
+      catalogStatus.style.color = "#16a34a";
+      catalogStatus.dataset.state = "success";
+    }
+    if (catalogNameInput) catalogNameInput.value = "";
+    if (catalogDescriptionInput) catalogDescriptionInput.value = "";
+    if (catalogCollectionInput) catalogCollectionInput.value = "";
+    if (catalogStackInput) catalogStackInput.checked = false;
+    catalogFileInput.value = "";
+    if (catalogFileLabel) catalogFileLabel.textContent = "Selecciona un archivo PDF…";
+    await fetchCatalogs();
+  } catch (error) {
+    console.error("Upload catálogo", error);
+    if (catalogStatus) {
+      catalogStatus.textContent = error.message || "No se pudo subir el catálogo.";
+      catalogStatus.style.color = "#b91c1c";
+      catalogStatus.dataset.state = "error";
+    }
+  }
+}
+
 filtersForm.addEventListener("submit", (event) => {
   event.preventDefault();
   fetchMaterials();
@@ -256,6 +487,79 @@ window.addEventListener("DOMContentLoaded", () => {
     currentPage = p;
     fetchMaterials();
   });
+
+  tabButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const target = btn.dataset.tabTarget || 'list';
+      setActiveTab(target);
+    });
+  });
+
+  catalogUploadForm?.addEventListener('submit', handleCatalogUpload);
+  catalogFileInput?.addEventListener('change', () => {
+    if (!catalogFileInput.files || !catalogFileInput.files.length) {
+      if (catalogFileLabel) catalogFileLabel.textContent = "Selecciona un archivo PDF…";
+      if (catalogStatus) {
+        catalogStatus.textContent = "";
+        catalogStatus.style.color = "#475569";
+      }
+      return;
+    }
+    const file = catalogFileInput.files[0];
+    if (catalogFileLabel) catalogFileLabel.textContent = file.name;
+    if (catalogStatus) {
+      catalogStatus.textContent = "";
+      catalogStatus.style.color = "#475569";
+    }
+  });
+
+  catalogRefreshBtn?.addEventListener('click', () => {
+    catalogsLoaded = false;
+    fetchCatalogs();
+  });
+
+  catalogClearBtn?.addEventListener('click', () => {
+    if (catalogNameInput) catalogNameInput.value = "";
+    if (catalogDescriptionInput) catalogDescriptionInput.value = "";
+    if (catalogCollectionInput) catalogCollectionInput.value = "";
+    if (catalogStackInput) catalogStackInput.checked = false;
+    if (catalogFileInput) catalogFileInput.value = "";
+    if (catalogFileLabel) catalogFileLabel.textContent = "Selecciona un archivo PDF…";
+    if (catalogStatus) {
+      catalogStatus.textContent = "";
+      catalogStatus.style.color = "#475569";
+      delete catalogStatus.dataset.state;
+    }
+  });
+
+  catalogListEl?.addEventListener('change', async (event) => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement) || input.name !== "catalogStack") return;
+    const catalogId = input.value;
+    if (!catalogId) return;
+    try {
+      const response = await fetch(`/api/catalogs/${catalogId}/stack`, { method: "POST" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "No se pudo actualizar el destacado.");
+      if (catalogStatus) {
+        catalogStatus.textContent = "Catálogo destacado actualizado.";
+        catalogStatus.style.color = "#16a34a";
+        catalogStatus.dataset.state = "success";
+      }
+      await fetchCatalogs();
+    } catch (error) {
+      console.error("Actualizar stack catálogo", error);
+      if (catalogStatus) {
+        catalogStatus.textContent = error.message || "No se pudo actualizar el catálogo destacado.";
+        catalogStatus.style.color = "#b91c1c";
+        catalogStatus.dataset.state = "error";
+      }
+      await fetchCatalogs();
+    }
+  });
+
+  setActiveTab('list');
+
   // Dropdown toggles
   Object.entries(filtersConfig).forEach(([key, conf]) => {
     // Abrir al click o al enfocar
@@ -612,3 +916,4 @@ thSortStock?.addEventListener("click", () => toggleSort(thSortStock));
 
 // Initialize sort indicators on load
 if (thSortId) thSortId.classList.add('sorted-asc');
+

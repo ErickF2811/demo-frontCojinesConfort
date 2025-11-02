@@ -10,7 +10,9 @@
   const chatStatus = document.getElementById("chatStatus");
   const chatRecordBtn = document.getElementById("chatRecord");
 
-  const CHAT_WEBHOOK_URL = "https://n8n.eflowdomain.cloud/webhook-test/bb2e440d-30bc-44e4-95df-7699c588deea";
+  const CHAT_WEBHOOK_URL =
+    (typeof window !== "undefined" && window.CHAT_WEBHOOK_URL) ||
+    "error: no webhook configured";
   const CHAT_SESSION_STORAGE_KEY = "cojines-chat-session-id";
   const CHAT_INBOX_URL = "/api/chat/messages";
   const CHAT_UPLOAD_URL = "/api/chat/upload";

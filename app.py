@@ -8,33 +8,14 @@ from typing import Any, Deque, Dict, List
 from uuid import uuid4
 
 from flask import Flask, jsonify, render_template, request
-import psycopg2
-from psycopg2.extras import RealDictCursor
+
+from db import get_connection
+from services.catalogs import create_catalog_entry, list_catalog_entries, set_catalog_stack
 
 try:  # Optional dependency for Azure Blob Storage
     from azure.storage.blob import BlobServiceClient  # type: ignore
 except Exception:  # pragma: no cover - azure library might be missing
     BlobServiceClient = None  # type: ignore
-
-
-def get_database_url() -> str:
-    """Return the database connection string from the environment.
-
-    Reads `DATABASE_URL`. Raise a clear error if not present.
-    Example format: postgresql://user:password@hostname:5432/database
-    """
-    database_url = os.environ.get("DATABASE_URL", "").strip()
-    if not database_url:
-        raise RuntimeError(
-            "DATABASE_URL is not set. Provide a valid PostgreSQL URL, e.g. "
-            "postgresql://user:password@hostname:5432/database"
-        )
-    return database_url
-
-
-def get_connection() -> psycopg2.extensions.connection:
-    """Create a new database connection using a dict-like cursor."""
-    return psycopg2.connect(get_database_url(), cursor_factory=RealDictCursor)
 
 
 def fetch_material_filters() -> Dict[str, List[str]]:
@@ -401,19 +382,28 @@ def fetch_material_movements(material_id: str, limit: int = 5) -> List[Dict[str,
 # -------------------------------
 # Azure Blob Storage helpers
 # -------------------------------
+DEFAULT_CHAT_WEBHOOK_URL = (
+    "error: no webhook configured"
+)
+
 AZURE_BLOB_CONNECTION_STRING = os.environ.get(
     "AZURE_BLOB_CONNECTION_STRING"
-    
 )
 AZURE_BLOB_CONTAINER = os.environ.get("AZURE_BLOB_CONTAINER", "blobchat")
+AZURE_BLOB_CATALOG_CONTAINER = os.environ.get("AZURE_BLOB_CATALOG_CONTAINER", "blobcatalogos")
 
 _blob_service_client = None
-_blob_container_client = None
+_blob_container_clients: Dict[str, Any] = {}
 
 
-def get_blob_container_client():
+def get_chat_webhook_url() -> str:
+    """Return webhook URL for chat, falling back to default."""
+    return os.environ.get("CHAT_WEBHOOK_URL", DEFAULT_CHAT_WEBHOOK_URL).strip() or DEFAULT_CHAT_WEBHOOK_URL
+
+
+def get_blob_container_client(container_name: str):
     """Return (and lazily initialise) a container client for uploads."""
-    global _blob_service_client, _blob_container_client
+    global _blob_service_client, _blob_container_clients
     if BlobServiceClient is None:
         raise RuntimeError(
             "El paquete azure-storage-blob no está instalado. "
@@ -426,17 +416,16 @@ def get_blob_container_client():
         _blob_service_client = BlobServiceClient.from_connection_string(
             AZURE_BLOB_CONNECTION_STRING
         )
-    if _blob_container_client is None:
-        _blob_container_client = _blob_service_client.get_container_client(
-            AZURE_BLOB_CONTAINER
-        )
+    if container_name not in _blob_container_clients:
+        client = _blob_service_client.get_container_client(container_name)
         try:
-            _blob_container_client.create_container()
+            client.create_container()
         except Exception as exc:  # pragma: no cover - ignore already exists
             error_code = getattr(exc, "error_code", None)
             if error_code not in {None, "ContainerAlreadyExists"}:
                 raise
-    return _blob_container_client
+        _blob_container_clients[container_name] = client
+    return _blob_container_clients[container_name]
 
 
 def build_blob_name(original_name: str | None, content_type: str | None) -> str:
@@ -485,7 +474,7 @@ def upload_blob_from_base64(
     blob_name = build_blob_name(filename, content_type)
     blob_path = f"{folder}/{blob_name}"
 
-    container_client = get_blob_container_client()
+    container_client = get_blob_container_client(AZURE_BLOB_CONTAINER)
     container_client.upload_blob(
         name=blob_path,
         data=binary,
@@ -506,6 +495,75 @@ def classify_media_kind(declared_type: str | None, content_type: str | None) -> 
     if declared in {"video"} or mime.startswith("video/"):
         return "video"
     return "file"
+
+
+def upload_blob_stream(
+    file_obj,
+    *,
+    filename: str | None,
+    content_type: str | None,
+    container_name: str,
+    prefix: str = "",
+) -> str:
+    """Upload a binary stream (e.g., PDF) to Azure Blob Storage."""
+    if not file_obj:
+        raise ValueError("Archivo inválido.")
+
+    blob_name = build_blob_name(filename, content_type or "application/octet-stream")
+    blob_path = f"{prefix.strip('/') + '/' if prefix else ''}{blob_name}"
+
+    container_client = get_blob_container_client(container_name)
+    container_client.upload_blob(
+        name=blob_path,
+        data=file_obj,
+        overwrite=True,
+        content_type=content_type or "application/octet-stream",
+        metadata={"original_name": filename or blob_name},
+    )
+    return f"{container_client.url}/{blob_path}"
+
+
+def serialize_catalog_row(
+    row: Dict[str, Any],
+    *,
+    container=None,
+    size_override: int | None = None,
+    last_modified_override: str | None = None,
+) -> Dict[str, Any]:
+    """Normalize catalog row for JSON responses including blob properties when possible."""
+    data = {
+        "catalog_id": row.get("catalog_id"),
+        "catalog_name": row.get("catalog_name"),
+        "description": row.get("description") or "",
+        "collection": row.get("collection") or "",
+        "stack": bool(row.get("stack")),
+        "url": row.get("url_catalogo") or "",
+        "created_at": (
+            row.get("created_at").isoformat()
+            if isinstance(row.get("created_at"), datetime)
+            else row.get("created_at")
+        ),
+    }
+    data["display_name"] = data["catalog_name"]
+
+    size = size_override
+    last_modified = last_modified_override
+
+    if container and data["url"] and size is None and last_modified is None:
+        prefix = container.url.rstrip("/") + "/"
+        if data["url"].startswith(prefix):
+            blob_name = data["url"][len(prefix):]
+            try:
+                props = container.get_blob_client(blob_name).get_blob_properties()
+                size = props.size
+                last_modified = props.last_modified.isoformat() if props.last_modified else None
+            except Exception:  # pragma: no cover - blob may not exist
+                size = None
+                last_modified = None
+
+    data["size"] = size
+    data["last_modified"] = last_modified
+    return data
 # -------------------------------
 # Chat inbox (in-memory)
 # -------------------------------
@@ -567,7 +625,7 @@ app = Flask(__name__)
 @app.route("/")
 def index() -> str:
     """Render materials page as the home."""
-    return render_template("materiales.html")
+    return render_template("materiales.html", chat_webhook_url=get_chat_webhook_url())
 
 
 @app.route("/api/filters")
@@ -600,7 +658,7 @@ def api_stock():
 @app.route("/materiales")
 def materiales_page() -> str:
     """Render the materials-only page."""
-    return render_template("materiales.html")
+    return render_template("materiales.html", chat_webhook_url=get_chat_webhook_url())
 
 
 @app.route("/api/materiales")
@@ -652,6 +710,87 @@ def api_material_movements(material_id: str):
         limit = request.args.get("limit", default=5, type=int)
         data = fetch_material_movements(material_id, limit=limit)
         return jsonify(data)
+    except Exception as exc:  # pragma: no cover
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/catalogs", methods=["GET", "POST"])
+def api_catalogs():
+    """Manage PDF catalog uploads and listing."""
+    if request.method == "POST":
+        file = request.files.get("file")
+        if not file or not file.filename:
+            return jsonify({"error": "Selecciona un archivo PDF."}), 400
+
+        catalog_name = (request.form.get("catalog_name") or "").strip()
+        description = (request.form.get("description") or "").strip()
+        collection = (request.form.get("collection") or "").strip() or None
+        stack_flag = (request.form.get("stack") or "0").strip().lower()
+        stack = stack_flag in {"1", "true", "on", "yes"}
+
+        if not catalog_name:
+            return jsonify({"error": "El nombre del catálogo es obligatorio."}), 400
+        if not description:
+            return jsonify({"error": "La descripción es obligatoria."}), 400
+
+        mimetype = (file.mimetype or "").lower()
+        if "pdf" not in mimetype:
+            return jsonify({"error": "Solo se permiten archivos PDF."}), 400
+
+        filename = file.filename
+        file.stream.seek(0, os.SEEK_END)
+        size_bytes = file.stream.tell()
+        file.stream.seek(0)
+
+        try:
+            url = upload_blob_stream(
+                file.stream,
+                filename=filename,
+                content_type=file.mimetype,
+                container_name=AZURE_BLOB_CATALOG_CONTAINER,
+                prefix="catalogs",
+            )
+            record = create_catalog_entry(
+                catalog_name=catalog_name,
+                description=description,
+                collection=collection,
+                stack=stack,
+                url_catalogo=url,
+            )
+            record = normalize_value(record)
+            container = get_blob_container_client(AZURE_BLOB_CATALOG_CONTAINER)
+            payload = serialize_catalog_row(
+                record,
+                container=container,
+                size_override=size_bytes,
+                last_modified_override=None,
+            )
+            return jsonify({"message": "Catálogo cargado correctamente.", "catalog": payload}), 201
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:  # pragma: no cover
+            return jsonify({"error": str(exc)}), 500
+
+    try:
+        records = [normalize_value(row) for row in list_catalog_entries()]
+        container = get_blob_container_client(AZURE_BLOB_CATALOG_CONTAINER)
+        items = [serialize_catalog_row(row, container=container) for row in records]
+        return jsonify({"catalogs": items})
+    except Exception as exc:  # pragma: no cover
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/catalogs/<int:catalog_id>/stack", methods=["POST"])
+def api_catalog_stack(catalog_id: int):
+    """Mark a catalog as the featured (stack=1) entry."""
+    try:
+        record = set_catalog_stack(catalog_id)
+        record = normalize_value(record)
+        container = get_blob_container_client(AZURE_BLOB_CATALOG_CONTAINER)
+        payload = serialize_catalog_row(record, container=container)
+        return jsonify({"message": "Catálogo destacado actualizado.", "catalog": payload})
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404
     except Exception as exc:  # pragma: no cover
         return jsonify({"error": str(exc)}), 500
 

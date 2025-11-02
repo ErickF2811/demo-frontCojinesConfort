@@ -8,6 +8,14 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
   </head>
   <body>
+    <div class="layout">
+      <nav class="sidebar">
+        <h2 class="sidebar__title">Panel</h2>
+        <button class="sidebar__link is-active" type="button" data-tab-target="list">Listado</button>
+        <button class="sidebar__link" type="button" data-tab-target="catalogs">Catálogos</button>
+      </nav>
+      <div class="layout__content">
+        <section id="tab-panel-list" class="tab-panel tab-panel--active" data-tab-panel="list">
     <header class="page-header">
       <div>
         <h1>Listado de Materiales</h1>
@@ -144,6 +152,60 @@
         </div>
       </section>
     </main>
+        </section>
+
+        <section id="tab-panel-catalogs" class="tab-panel" data-tab-panel="catalogs" hidden>
+          <header class="page-header">
+            <div>
+              <h1>Catálogos PDF</h1>
+              <p class="subtitle">Carga y consulta los catálogos en PDF alojados en Azure Blob Storage.</p>
+            </div>
+          </header>
+          <main class="catalog-main">
+            <section class="catalog-upload card">
+              <h2>Subir catálogo</h2>
+              <form id="catalogUploadForm" class="catalog-form">
+                <div class="form-field">
+                  <label for="catalogName">Nombre del catálogo</label>
+                  <input type="text" id="catalogName" name="catalog_name" maxlength="255" required placeholder="Ej. Colección verano" />
+                </div>
+                <div class="form-field">
+                  <label for="catalogDescription">Descripción</label>
+                  <textarea id="catalogDescription" name="description" maxlength="255" required placeholder="Describe el contenido del catálogo"></textarea>
+                </div>
+                <div class="form-field">
+                  <label for="catalogCollection">Colección</label>
+                  <input type="text" id="catalogCollection" name="collection" maxlength="255" placeholder="Ej. Temporada 2025" />
+                </div>
+                <label class="catalog-stack-toggle" for="catalogStack">
+                  <input type="checkbox" id="catalogStack" name="stack" />
+                  <span>Marcar como catálogo destacado</span>
+                </label>
+                <label class="file-field" for="catalogFile">
+                  <input type="file" id="catalogFile" accept="application/pdf" required />
+                  <span id="catalogFileLabel">Selecciona un archivo PDF…</span>
+                </label>
+                <div class="catalog-actions">
+                  <button type="submit" class="button button-primary">Subir catálogo</button>
+                  <button type="button" class="button button-muted" id="catalogClear">Limpiar</button>
+                </div>
+              </form>
+              <p id="catalogStatus" class="catalog-status"></p>
+            </section>
+
+            <section class="catalog-list card">
+              <header class="catalog-list__header">
+                <h2>Catálogos disponibles</h2>
+                <button type="button" class="button button-secondary" id="catalogRefresh">Actualizar</button>
+              </header>
+              <div id="catalogList" class="catalog-list__body">
+                <p class="empty">No hay catálogos disponibles.</p>
+              </div>
+            </section>
+          </main>
+        </section>
+      </div>
+    </div>
 
     <!-- Modal de Detalle -->
     <div id="detailModal" class="modal hidden" aria-hidden="true">
@@ -214,6 +276,9 @@
       </p>
     </footer>
 
+    <script>
+      window.CHAT_WEBHOOK_URL = {{ chat_webhook_url|tojson }};
+    </script>
     <script src="{{ url_for('static', filename='chat.js') }}" defer></script>
     <script src="{{ url_for('static', filename='materiales.js') }}" defer></script>
 
