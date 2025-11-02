@@ -214,6 +214,42 @@
       </p>
     </footer>
 
+    <script src="{{ url_for('static', filename='chat.js') }}" defer></script>
     <script src="{{ url_for('static', filename='materiales.js') }}" defer></script>
+
+    <button id="chatFab" class="chat-fab" type="button" aria-label="Abrir chat de soporte">
+      💬
+    </button>
+
+    <section id="chatPanel" class="chat-panel" aria-live="polite" aria-hidden="true">
+      <header class="chat-header">
+        <div>
+          <strong>Asistente</strong>
+          <small>Webhook conectado</small>
+        </div>
+        <button id="chatClose" class="chat-close" type="button">Cerrar</button>
+      </header>
+      <div id="chatMessages" class="chat-messages" role="log"></div>
+      <footer class="chat-footer">
+        <div id="chatPreview" class="chat-preview" hidden></div>
+        <form id="chatForm">
+          <textarea id="chatInput" placeholder="Escribe tu mensaje..." aria-label="Mensaje"></textarea>
+          <div class="chat-actions">
+            <label class="chat-upload" aria-label="Adjuntar archivo">
+              📎
+              <input id="chatUpload" type="file" accept="image/*,video/*,audio/*" multiple />
+            </label>
+            <button id="chatRecord" type="button" class="chat-record">
+              <span>🎙️</span>
+              Voz
+            </button>
+            <button id="chatSend" type="submit" class="chat-send">
+              Enviar
+            </button>
+          </div>
+        </form>
+        <div id="chatStatus" class="chat-status"></div>
+      </footer>
+    </section>
   </body>
-  </html>
+</html>

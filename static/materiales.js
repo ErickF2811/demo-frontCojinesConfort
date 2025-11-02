@@ -11,6 +11,7 @@ const totalPagesEl = document.getElementById("totalPages");
 const tableCard = document.querySelector('.table-card');
 const mobileMediaQuery = window.matchMedia('(max-width: 640px)');
 
+
 function syncMobileLayoutClass() {
   if (!tableCard) return;
   const isMobile = mobileMediaQuery.matches;
@@ -297,6 +298,7 @@ window.addEventListener("DOMContentLoaded", () => {
       }
     });
   });
+
 });
 
 // ---------- Detail Modal ----------

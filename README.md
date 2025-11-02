@@ -21,8 +21,8 @@ pip install -r requirements.txt
 Define la variable `DATABASE_URL` con tu cadena de conexión, por ejemplo:
 
 ```bash
-export DATABASE_URL="postgresql://admin:admin123@postgre_dev:5432/cojines"
-$env:DATABASE_URL= "postgresql://admin:admin123@postgre_dev/cojines"
+export DATABASE_URL="postgresql://admin:admin@postgre_dev:5432/cojines"
+$env:DATABASE_URL= "postgresql://admin:admin@postgre_dev/cojines"
 ```
 
 ## Ejecutar el servidor

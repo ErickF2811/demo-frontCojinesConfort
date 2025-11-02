@@ -1,11 +1,20 @@
+import base64
+import mimetypes
 import os
+from collections import defaultdict, deque
+from datetime import datetime
 from decimal import Decimal
-from typing import Any, Dict, List
+from typing import Any, Deque, Dict, List
+from uuid import uuid4
 
 from flask import Flask, jsonify, render_template, request
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from datetime import datetime
+
+try:  # Optional dependency for Azure Blob Storage
+    from azure.storage.blob import BlobServiceClient  # type: ignore
+except Exception:  # pragma: no cover - azure library might be missing
+    BlobServiceClient = None  # type: ignore
 
 
 def get_database_url() -> str:
@@ -389,6 +398,169 @@ def fetch_material_movements(material_id: str, limit: int = 5) -> List[Dict[str,
         ]
 
 
+# -------------------------------
+# Azure Blob Storage helpers
+# -------------------------------
+AZURE_BLOB_CONNECTION_STRING = os.environ.get(
+    "AZURE_BLOB_CONNECTION_STRING"
+    
+)
+AZURE_BLOB_CONTAINER = os.environ.get("AZURE_BLOB_CONTAINER", "blobchat")
+
+_blob_service_client = None
+_blob_container_client = None
+
+
+def get_blob_container_client():
+    """Return (and lazily initialise) a container client for uploads."""
+    global _blob_service_client, _blob_container_client
+    if BlobServiceClient is None:
+        raise RuntimeError(
+            "El paquete azure-storage-blob no está instalado. "
+            "Instálalo con `pip install azure-storage-blob`."
+        )
+    if not AZURE_BLOB_CONNECTION_STRING:
+        raise RuntimeError("AZURE_BLOB_CONNECTION_STRING no está configurado.")
+
+    if _blob_service_client is None:
+        _blob_service_client = BlobServiceClient.from_connection_string(
+            AZURE_BLOB_CONNECTION_STRING
+        )
+    if _blob_container_client is None:
+        _blob_container_client = _blob_service_client.get_container_client(
+            AZURE_BLOB_CONTAINER
+        )
+        try:
+            _blob_container_client.create_container()
+        except Exception as exc:  # pragma: no cover - ignore already exists
+            error_code = getattr(exc, "error_code", None)
+            if error_code not in {None, "ContainerAlreadyExists"}:
+                raise
+    return _blob_container_client
+
+
+def build_blob_name(original_name: str | None, content_type: str | None) -> str:
+    """Generate a unique blob filename preserving extension when possible."""
+    suffix = ""
+    if original_name and "." in original_name:
+        suffix = original_name.rsplit(".", 1)[-1].strip()
+    if not suffix:
+        if content_type:
+            guessed = mimetypes.guess_extension(content_type.split(";")[0].strip())
+            if guessed:
+                suffix = guessed.lstrip(".")
+    if not suffix:
+        suffix = "bin"
+    return f"{uuid4().hex}.{suffix}"
+
+
+def upload_blob_from_base64(
+    data_base64: str,
+    *,
+    filename: str | None,
+    content_type: str | None,
+    media_kind: str | None = None,
+) -> str:
+    """Upload a base64 string to Azure Blob Storage and return the public URL."""
+    if not data_base64:
+        raise ValueError("No se proporcionó data para subir al blob.")
+
+    if "," in data_base64:
+        data_base64 = data_base64.split(",", 1)[1]
+    try:
+        binary = base64.b64decode(data_base64)
+    except Exception as exc:
+        raise ValueError("No se pudo decodificar el contenido base64.") from exc
+
+    kind = (media_kind or "").lower()
+    folder_map = {
+        "image": "images",
+        "img": "images",
+        "audio": "audio",
+        "voice": "audio",
+        "video": "video",
+    }
+    folder = folder_map.get(kind, "files")
+
+    blob_name = build_blob_name(filename, content_type)
+    blob_path = f"{folder}/{blob_name}"
+
+    container_client = get_blob_container_client()
+    container_client.upload_blob(
+        name=blob_path,
+        data=binary,
+        overwrite=True,
+        content_type=content_type or "application/octet-stream",
+    )
+    return f"{container_client.url}/{blob_path}"
+
+
+def classify_media_kind(declared_type: str | None, content_type: str | None) -> str:
+    """Return a simplified media kind (image, voice, video, file)."""
+    declared = (declared_type or "").lower()
+    mime = (content_type or "").lower()
+    if declared in {"image", "img"} or mime.startswith("image/"):
+        return "image"
+    if declared in {"audio", "voz", "voice"} or mime.startswith("audio/"):
+        return "voice"
+    if declared in {"video"} or mime.startswith("video/"):
+        return "video"
+    return "file"
+# -------------------------------
+# Chat inbox (in-memory)
+# -------------------------------
+CHAT_INBOX: Dict[str, Deque[Dict[str, Any]]] = defaultdict(deque)
+CHAT_INBOX_MAX = 100
+
+
+def push_chat_messages(session_id: str, messages: List[Dict[str, Any]]) -> int:
+    """Store bot messages grouped by session. Returns number stored."""
+    if not session_id or not isinstance(session_id, str):
+        return 0
+    inbox = CHAT_INBOX[session_id]
+    stored = 0
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        role = message.get("role") or "bot"
+        content = (
+            message.get("content")
+            or message.get("text")
+            or message.get("message")
+            or ""
+        ).strip()
+        attachments = message.get("attachments")
+        if not isinstance(attachments, list):
+            attachments = []
+        timestamp = message.get("timestamp")
+        if not timestamp:
+            timestamp = datetime.utcnow().isoformat() + "Z"
+        entry = {
+            "role": role if role in {"bot", "user"} else "bot",
+            "content": content,
+            "attachments": attachments,
+            "timestamp": timestamp,
+        }
+        inbox.append(entry)
+        stored += 1
+        while len(inbox) > CHAT_INBOX_MAX:
+            inbox.popleft()
+    return stored
+
+
+def pull_chat_messages(session_id: str) -> List[Dict[str, Any]]:
+    """Return and clear queued messages for a session."""
+    if not session_id or session_id not in CHAT_INBOX:
+        return []
+    inbox = CHAT_INBOX[session_id]
+    items: List[Dict[str, Any]] = []
+    while inbox:
+        items.append(inbox.popleft())
+    if not inbox:
+        CHAT_INBOX.pop(session_id, None)
+    return items
+
+
 app = Flask(__name__)
 
 
@@ -483,6 +655,91 @@ def api_material_movements(material_id: str):
     except Exception as exc:  # pragma: no cover
         return jsonify({"error": str(exc)}), 500
 
+
+@app.route("/api/chat/upload", methods=["POST"])
+def api_chat_upload():
+    """Receive a base64 attachment and upload it to Azure Blob Storage."""
+    payload = request.get_json(silent=True) or {}
+    data = payload.get("data")
+    if not data:
+        return jsonify({"error": "data es requerido"}), 400
+
+    name = payload.get("name")
+    content_type = payload.get("contentType") or payload.get("mimeType")
+    declared_type = payload.get("type")
+
+    media_kind = classify_media_kind(declared_type, content_type)
+
+    try:
+        url = upload_blob_from_base64(
+            data,
+            filename=name,
+            content_type=content_type,
+            media_kind=media_kind,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # pragma: no cover
+        return jsonify({"error": str(exc)}), 500
+
+    return jsonify(
+        {
+            "url": url,
+            "name": name,
+            "type": declared_type or media_kind,
+            "media_kind": media_kind,
+            "contentType": content_type,
+        }
+    )
+
+
+@app.route("/api/chat/incoming", methods=["POST"])
+def api_chat_incoming():
+    """Receive asynchronous responses from the assistant/webhook service."""
+    payload = request.get_json(silent=True) or {}
+    session_id = payload.get("sessionId") or payload.get("session_id")
+    if not session_id:
+        return jsonify({"error": "sessionId es requerido"}), 400
+
+    messages_raw = payload.get("messages")
+    messages: List[Dict[str, Any]] = []
+
+    if isinstance(messages_raw, dict):
+        messages_raw = [messages_raw]
+    if isinstance(messages_raw, list):
+        messages = [m for m in messages_raw if isinstance(m, dict)]
+    else:
+        attachments = payload.get("attachments")
+        if not isinstance(attachments, list):
+            attachments = []
+        text = (
+            payload.get("message")
+            or payload.get("reply")
+            or payload.get("text")
+            or ""
+        )
+        if text or attachments:
+            messages = [{
+                "role": payload.get("role", "bot"),
+                "content": text,
+                "attachments": attachments,
+                "timestamp": payload.get("timestamp"),
+            }]
+
+    stored = push_chat_messages(session_id, messages)
+    status_code = 202 if stored else 200
+    return jsonify({"accepted": stored}), status_code
+
+
+@app.route("/api/chat/messages")
+def api_chat_messages():
+    """Return queued bot messages for the given sessionId."""
+    session_id = request.args.get("sessionId") or request.args.get("session_id")
+    if not session_id:
+        return jsonify({"error": "sessionId es requerido"}), 400
+
+    messages = pull_chat_messages(session_id)
+    return jsonify({"messages": messages})
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
