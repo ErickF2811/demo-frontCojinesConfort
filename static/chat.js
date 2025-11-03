@@ -16,7 +16,7 @@
   const CHAT_SESSION_STORAGE_KEY = "cojines-chat-session-id";
   const CHAT_INBOX_URL = "/api/chat/messages";
   const CHAT_UPLOAD_URL = "/api/chat/upload";
-  const chatAttachmentLimit = 5;
+  const chatAttachmentLimit = 2; // máx 1 imagen + 1 audio
   const CHAT_POLL_INTERVAL = 5000;
 
   let chatSessionId = localStorage.getItem(CHAT_SESSION_STORAGE_KEY) || (crypto.randomUUID?.() ?? `chat-${Date.now()}`);
@@ -118,9 +118,25 @@
     pendingAttachments.forEach((att, index) => {
       const chip = document.createElement("div");
       chip.className = "chat-attachment-preview";
-      const label = document.createElement("span");
-      label.textContent = att.name || att.type;
-      chip.appendChild(label);
+      const kind = (att.media_kind || att.type || "").toLowerCase();
+      if (kind === "image") {
+        const img = document.createElement("img");
+        img.src = att.dataUrl || att.url;
+        img.alt = att.name || "imagen";
+        chip.appendChild(img);
+      } else if (kind === "voice" || kind === "audio") {
+        const audio = document.createElement("audio");
+        audio.controls = true;
+        audio.preload = "metadata";
+        audio.src = att.dataUrl || att.url;
+        audio.style.height = "28px";
+        audio.style.maxWidth = "180px";
+        chip.appendChild(audio);
+      } else {
+        const label = document.createElement("span");
+        label.textContent = att.name || att.type || "archivo";
+        chip.appendChild(label);
+      }
       const removeBtn = document.createElement("button");
       removeBtn.type = "button";
       removeBtn.textContent = "✕";
@@ -149,25 +165,58 @@
     });
   }
 
+  function countByKind(kind) {
+    return pendingAttachments.filter(a => (a.media_kind || a.type) === kind).length;
+  }
+
+  function replaceOrAdd(att) {
+    const kind = att.media_kind || att.type;
+    const idx = pendingAttachments.findIndex(a => (a.media_kind || a.type) === kind);
+    if (idx >= 0) {
+      pendingAttachments.splice(idx, 1, att);
+    } else {
+      // Si ya hay 2 adjuntos, elimina el primero que no sea de este tipo
+      if (pendingAttachments.length >= chatAttachmentLimit) {
+        const otherIdx = pendingAttachments.findIndex(a => (a.media_kind || a.type) !== kind);
+        if (otherIdx >= 0) pendingAttachments.splice(otherIdx, 1);
+        else pendingAttachments.shift();
+      }
+      pendingAttachments.push(att);
+    }
+  }
+
   async function handleChatFiles(fileList) {
     const files = Array.from(fileList || []);
     if (!files.length) return;
-    const availableSlots = Math.max(0, chatAttachmentLimit - pendingAttachments.length);
-    const filesToAdd = files.slice(0, availableSlots);
-    for (const file of filesToAdd) {
+    for (const file of files) {
       try {
-        const dataUrl = await fileToDataUrl(file);
         const mediaKind = detectMediaKind(file.type, undefined);
-        pendingAttachments.push({
+        if (mediaKind !== "image" && mediaKind !== "voice" && mediaKind !== "audio") {
+          updateChatStatus("Solo se permite adjuntar una imagen. El audio se agrega con 'Voz'.", true);
+          continue;
+        }
+        const normalizedKind = mediaKind === "audio" ? "voice" : mediaKind;
+        // Limitar: 1 imagen y 1 audio. Si ya existe, alerta y no agrega.
+        if (normalizedKind === "voice" && countByKind("voice") >= 1) {
+          updateChatStatus("Solo puedes adjuntar un audio por mensaje.", true);
+          continue;
+        }
+        if (normalizedKind === "image" && countByKind("image") >= 1) {
+          updateChatStatus("Solo puedes adjuntar una imagen por mensaje.", true);
+          continue;
+        }
+        const dataUrl = await fileToDataUrl(file);
+        const att = {
           id: generateId(),
           name: file.name,
           size: file.size,
           mimeType: file.type,
-          type: mediaKind,
-          media_kind: mediaKind,
+          type: normalizedKind,
+          media_kind: normalizedKind,
           dataUrl,
           uploadedUrl: null,
-        });
+        };
+        replaceOrAdd(att);
       } catch (err) {
         console.error("Error leyendo archivo", err);
         updateChatStatus("No pudimos cargar uno de los archivos.", true);
@@ -334,6 +383,10 @@
 
   async function toggleRecording() {
     if (!chatRecordBtn) return;
+    if (countByKind('voice') >= 1) {
+      updateChatStatus("Ya tienes un audio adjunto. Solo uno por mensaje.", true);
+      return;
+    }
     if (isRecording) {
       mediaRecorder?.stop();
       return;
@@ -347,6 +400,7 @@
         const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || "audio/webm" });
         stream.getTracks().forEach((track) => track.stop());
         const file = new File([blob], `nota-${Date.now()}.webm`, { type: blob.type });
+        // Solo un audio: reemplaza si ya existe
         await handleChatFiles([file]);
         chatRecordBtn.classList.remove("is-recording");
         isRecording = false;
@@ -372,6 +426,12 @@
     chatClose?.addEventListener("click", () => toggleChatPanel(false));
     chatForm.addEventListener("submit", submitChatForm);
     chatUpload?.addEventListener("change", async (event) => {
+      // Si ya hay una imagen adjunta, alerta y no agrega otra
+      if (countByKind('image') >= 1 && event.target?.files?.length) {
+        updateChatStatus("Solo puedes adjuntar una imagen por mensaje.", true);
+        event.target.value = "";
+        return;
+      }
       await handleChatFiles(event.target.files);
       event.target.value = "";
     });
