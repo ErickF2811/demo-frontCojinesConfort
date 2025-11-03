@@ -184,3 +184,62 @@ docker build -t ${IMAGE_NAME}:${VERSION} .
 docker tag ${IMAGE_NAME}:${VERSION} ${REGISTRY_USER}/${IMAGE_NAME}:${VERSION}
 docker push ${REGISTRY_USER}/${IMAGE_NAME}:${VERSION}
 ```
+
+## Panel de Catálogos (PDF)
+
+El panel “Catálogos PDF” permite subir, listar y marcar como destacados los catálogos en formato PDF almacenados en Azure Blob Storage.
+
+- Tabla utilizada: `public.tbl_catalogo`
+  - `catalog_id` BIGSERIAL PK
+  - `created_at` TIMESTAMP NOT NULL DEFAULT now()
+  - `catalog_name` VARCHAR(255) NOT NULL
+  - `description` VARCHAR(255) NOT NULL
+  - `collection` VARCHAR(255)
+  - `stack` SMALLINT NOT NULL DEFAULT 0 — indicador “Destacado” (0/1). Se permiten múltiples destacados a la vez.
+  - `url_catalogo` TEXT NOT NULL — URL pública del PDF en Azure Blob (`catalogs/<uuid>.pdf`)
+  - `url_portada` TEXT NULL — URL pública de la portada en Azure Blob (`portadas_catalogo/<uuid>.<ext>`)
+
+DDL de referencia (PostgreSQL):
+
+```sql
+CREATE TABLE IF NOT EXISTS public.tbl_catalogo (
+  catalog_id   BIGSERIAL PRIMARY KEY,
+  created_at   TIMESTAMP NOT NULL DEFAULT NOW(),
+  catalog_name VARCHAR(255) NOT NULL,
+  description  VARCHAR(255) NOT NULL,
+  collection   VARCHAR(255),
+  stack        SMALLINT NOT NULL DEFAULT 0,
+  url_catalogo TEXT NOT NULL,
+  url_portada  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_tbl_catalogo_created_at ON public.tbl_catalogo (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tbl_catalogo_stack ON public.tbl_catalogo (stack);
+```
+
+Variables de entorno (catálogos):
+
+- `AZURE_BLOB_CONNECTION_STRING`: cadena de conexión del Storage Account.
+- `AZURE_BLOB_CATALOG_CONTAINER`: contenedor para catálogos (por defecto `blobcatalogos`).
+
+Convenciones en Azure Blob
+
+- PDFs: carpeta `catalogs/`
+- Portadas (imágenes): carpeta `portadas_catalogo/`
+
+Endpoints del módulo
+
+- `GET /api/catalogs`: devuelve `{ catalogs: [...] }` con filas de `tbl_catalogo` y, cuando es posible, `size` y `last_modified` del blob.
+- `POST /api/catalogs`: crea un catálogo. Campos de formulario:
+  - `catalog_name`, `description` (requeridos)
+  - `collection` (opcional)
+  - `stack` (“1”|“0”, opcional)
+  - `file` (PDF requerido)
+  - `cover` (imagen opcional)
+  Sube `file` a `catalogs/` y `cover` a `portadas_catalogo/` y guarda sus URLs en la tabla.
+- `POST /api/catalogs/<catalog_id>/stack`: marca o desmarca “Destacado” sin afectar a otros. Body JSON: `{ "value": true|false }`.
+
+Notas
+
+- Para evitar errores `InvalidMetadata` en Azure, los blobs se suben sin metadatos personalizados.
+- El frontend usa checkboxes para permitir múltiples destacados.
+- La API incluye `cover_url` (alias de `url_portada`) y `url` (alias de `url_catalogo`).
