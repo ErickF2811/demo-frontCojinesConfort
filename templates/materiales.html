@@ -108,6 +108,15 @@
             <h2>Materiales</h2>
             <p id="resultsSummary" class="results-summary">Preparando información…</p>
           </div>
+          <div class="table-card__controls">
+            <label for="perPage">Por página</label>
+            <select id="perPage">
+              <option value="10">10</option>
+              <option value="20" selected>20</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+          </div>
         </header>
         <div class="table-wrapper">
           <table>
@@ -133,16 +142,7 @@
           </table>
         </div>
         <div class="pagination">
-          <div class="pager-left">
-            <label>Por página
-              <select id="perPage">
-                <option value="10">10</option>
-                <option value="20" selected>20</option>
-                <option value="50">50</option>
-                <option value="100">100</option>
-              </select>
-            </label>
-          </div>
+          <div class="pager-left"></div>
           <div class="pager-right">
             <button id="prevPage" class="button button-muted" type="button">Anterior</button>
             <input id="pageInput" type="number" min="1" value="1" />

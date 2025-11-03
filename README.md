@@ -177,9 +177,8 @@ Notas de compatibilidad
 
 ```powershell
 $IMAGE_NAME = "cojines-app"
-$VERSION = "v1.0"
+$VERSION = "v5.0"
 $REGISTRY_USER = "erifcamp"
-docker build -t $IMAGE_NAME:$VERSION .
 docker build -t ${IMAGE_NAME}:${VERSION} .
 docker tag ${IMAGE_NAME}:${VERSION} ${REGISTRY_USER}/${IMAGE_NAME}:${VERSION}
 docker push ${REGISTRY_USER}/${IMAGE_NAME}:${VERSION}

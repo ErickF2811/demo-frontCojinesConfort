@@ -626,6 +626,54 @@ def pull_chat_messages(session_id: str) -> List[Dict[str, Any]]:
 
 app = Flask(__name__)
 
+# -------------------------------
+# CORS policy
+# -------------------------------
+# Chat endpoints: allow only from a specific origin.
+# Materials and catalogs endpoints: allow any origin.
+CHAT_ALLOWED_ORIGIN = os.environ.get(
+    "CHAT_ALLOWED_ORIGIN", "https://n8n.eflowdomain.cloud"
+)
+
+
+@app.after_request
+def apply_cors(response):
+    try:
+        path = request.path or ""
+        origin = request.headers.get("Origin")
+        # Common headers
+        response.headers.setdefault(
+            "Access-Control-Allow-Headers", "Content-Type, Authorization"
+        )
+        response.headers.setdefault(
+            "Access-Control-Allow-Methods", "GET, POST, OPTIONS"
+        )
+        response.headers.setdefault("Vary", "Origin")
+
+        if path.startswith("/api/chat/"):
+            if origin == CHAT_ALLOWED_ORIGIN:
+                response.headers["Access-Control-Allow-Origin"] = origin
+            else:
+                # If origin does not match, set allowed origin anyway; browser will block
+                response.headers["Access-Control-Allow-Origin"] = CHAT_ALLOWED_ORIGIN
+        elif (
+            path.startswith("/api/materiales")
+            or path.startswith("/api/filters")
+            or path.startswith("/api/stock")
+            or path.startswith("/api/catalogs")
+        ):
+            response.headers["Access-Control-Allow-Origin"] = "*"
+    except Exception:
+        pass
+    return response
+
+
+@app.route("/api/<path:any_path>", methods=["OPTIONS"])
+def api_cors_preflight(any_path: str):
+    resp = jsonify({"ok": True})
+    resp.status_code = 204
+    return resp
+
 
 @app.route("/")
 def index() -> str:
