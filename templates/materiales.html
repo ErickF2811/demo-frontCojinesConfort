@@ -321,9 +321,13 @@
           <strong>Asistente</strong>
           <small>Webhook conectado</small>
         </div>
-        <button id="chatClose" class="chat-close" type="button">Cerrar</button>
+        <div style="display:flex; gap:.5rem; align-items:center;">
+          <button id="chatLogsToggle" class="chat-close" type="button" title="Ver logs">Logs</button>
+          <button id="chatClose" class="chat-close" type="button">Cerrar</button>
+        </div>
       </header>
       <div id="chatMessages" class="chat-messages" role="log"></div>
+      <div id="chatLogs" class="chat-logs" hidden></div>
       <footer class="chat-footer">
         <div id="chatPreview" class="chat-preview" hidden></div>
         <form id="chatForm">

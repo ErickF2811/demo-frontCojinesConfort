@@ -807,6 +807,21 @@ body.no-scroll .chat-fab { display: none !important; }
   gap: 0.85rem;
   background: linear-gradient(180deg, rgba(226, 232, 240, 0.2), rgba(226, 232, 240, 0));
 }
+.chat-logs {
+  display: block;
+  background: #0b1220;
+  color: #d1d5db;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.35;
+  max-height: 140px;
+  overflow: auto;
+  padding: 8px 10px;
+  border-top: 1px solid rgba(148, 163, 184, 0.25);
+}
+.chat-logs .log-entry { white-space: pre-wrap; word-break: break-word; margin: 2px 0; }
+.chat-logs .log-entry .ts { color: #9ca3af; }
+.chat-logs .log-entry.err { color: #fecaca; }
 .chat-message {
   display: flex;
   flex-direction: column;
@@ -966,6 +981,31 @@ body.no-scroll .chat-fab { display: none !important; }
     z-index: 2000 !important;
   }
   body.chat-open { overflow: hidden; height: 100vh; }
+}
+
+/* Precise placement for mobile cards: put Proveedor/Unidad next to thumbnail */
+@media (max-width: 640px) {
+  .table-card.table-card--mobile .table-wrapper tbody tr {
+    grid-template-columns: 120px 1fr !important; /* imagen | info */
+  }
+  .table-card.table-card--mobile .table-wrapper td.image-cell {
+    grid-column: 1 !important;
+    grid-row: 1 / span 4 !important; /* ocupa altura de 4 filas de info */
+  }
+  /* ID, Material, Color en filas 1-3 de la columna de info */
+  .table-card.table-card--mobile .table-wrapper td:nth-child(2) { grid-column: 2 !important; grid-row: 1 !important; }
+  .table-card.table-card--mobile .table-wrapper td:nth-child(3) { grid-column: 2 !important; grid-row: 2 !important; }
+  .table-card.table-card--mobile .table-wrapper td:nth-child(4) { grid-column: 2 !important; grid-row: 3 !important; }
+  /* Proveedor y Unidad pegados a la izquierda (a ancho completo) */
+  .table-card.table-card--mobile .table-wrapper td:nth-child(6),
+  .table-card.table-card--mobile .table-wrapper td:nth-child(8) {
+    grid-column: 1 / -1 !important;
+    text-align: left !important;
+  }
+  /* El resto, a ancho completo debajo */
+  .table-card.table-card--mobile .table-wrapper td:nth-child(n+5):not(:nth-child(6)):not(:nth-child(8)) {
+    grid-column: 1 / -1 !important;
+  }
 }
 
 @media (max-width: 400px) {
