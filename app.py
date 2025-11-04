@@ -1,6 +1,10 @@
 import base64
+import io
 import mimetypes
 import os
+import logging
+import urllib.parse
+import urllib.request
 from collections import defaultdict, deque
 from datetime import datetime
 from decimal import Decimal
@@ -59,6 +63,21 @@ def fetch_stock_summary(filters: Dict[str, str]) -> List[Dict[str, Any]]:
     """Fetch the stock summary grouped by material and movement type."""
     where_clauses = []
     params: List[Any] = []
+
+    # Support exact ID filter (accepts multiple comma-separated values)
+    id_values = filters.get("id") or []
+    if id_values:
+        ors = []
+        for v in id_values:
+            ors.append("id_material = %s")
+            params.append(v)
+        if ors:
+            where_clauses.append("(" + " OR ".join(ors) + ")")
+        # Remove from generic processing to avoid double-handling
+        try:
+            del filters["id"]
+        except Exception:
+            pass
 
     mapping = {
         "material_name": ("COALESCE(NULLIF(TRIM(m.material_name), ''), 'Sin nombre')", "ILIKE"),
@@ -183,6 +202,7 @@ def fetch_material_list(
         "id": "id_material",
         "stock": "stock_actual",
         "name": "material_name",
+        "cost": "costo_unitario",
     }
     order_expr = sort_map.get((sort_by or "").lower(), "id_material")
     direction = "DESC" if (sort_dir or "").lower() == "desc" else "ASC"
@@ -241,6 +261,35 @@ def fetch_material_list_with_total(
     where_clauses = []
     params: List[Any] = []
 
+    # Filter by ID
+    # - If value is only digits, match by trailing digits (e.g., 5 -> M00005, 123 -> M00123)
+    # - Otherwise, exact match (e.g., M00005)
+    try:
+        id_values = filters.get("id") or []
+        if id_values:
+            ors = []
+            for raw in id_values:
+                s = (raw or "").strip()
+                if not s:
+                    continue
+                if s.isdigit():
+                    # Ends-with numeric match using RIGHT(col, len) = digits
+                    ors.append("RIGHT(id_material, CHAR_LENGTH(%s)) = %s")
+                    params.extend([s, s])
+                else:
+                    ors.append("id_material = %s")
+                    params.append(s)
+            if ors:
+                where_clauses.append("(" + " OR ".join(ors) + ")")
+            # Remove to avoid being processed by the generic mapping
+            try:
+                del filters["id"]
+            except Exception:
+                pass
+    except Exception:
+        # Non-blocking: if something goes wrong, continue without ID filter
+        pass
+
     mapping = {
         "material_name": ("COALESCE(NULLIF(TRIM(material_name), ''), 'Sin nombre')", "ILIKE"),
         "color": ("COALESCE(NULLIF(TRIM(color), ''), 'Sin color')", "ILIKE"),
@@ -268,6 +317,7 @@ def fetch_material_list_with_total(
         "id": "id_material",
         "stock": "stock_actual",
         "name": "material_name",
+        "cost": "costo_unitario",
     }
     order_expr = sort_map.get((sort_by or "").lower(), "id_material")
     direction = "DESC" if (sort_dir or "").lower() == "desc" else "ASC"
@@ -527,6 +577,36 @@ def upload_blob_stream(
     return f"{container_client.url}/{blob_path}"
 
 
+def _download_image_bytes(url: str, *, timeout: int = 15, max_bytes: int = 10 * 1024 * 1024) -> tuple[bytes, str | None]:
+    """Download an image from an external URL and return (bytes, content_type).
+
+    - Validates scheme http/https
+    - Ensures Content-Type is image/* when available
+    - Caps the download size to `max_bytes`
+    """
+    if not url:
+        raise ValueError("URL de carátula inválida.")
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError("La URL de carátula debe iniciar con http(s)://.")
+    req = urllib.request.Request(url, headers={"User-Agent": "catalog-uploader/1.0"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec - validated schemes
+        ctype = resp.headers.get("Content-Type") or resp.headers.get("content-type")
+        if ctype and not ctype.lower().startswith("image/"):
+            raise ValueError("La URL proporcionada no es una imagen.")
+        # Read up to max_bytes
+        buf = io.BytesIO()
+        total = 0
+        chunk = resp.read(64 * 1024)
+        while chunk:
+            buf.write(chunk)
+            total += len(chunk)
+            if total > max_bytes:
+                raise ValueError("La imagen remota excede el tamaño permitido (10MB).")
+            chunk = resp.read(64 * 1024)
+        return buf.getvalue(), ctype
+
+
 def upload_blob_from_base64_to_container(
     data_base64: str,
     *,
@@ -582,6 +662,91 @@ def list_container_files(container_name: str, prefix: str) -> list[dict[str, Any
         })
     return items
 
+def insert_file_record(
+    *,
+    material_id: str,
+    path: str,
+    observacion: str | None,
+    url_file: str,
+    extension: str | None,
+) -> dict[str, Any]:
+    from db import get_connection  # local import
+
+    with get_connection() as conn, conn.cursor() as cur:
+        try:
+            # Prefer stored procedure
+            cur.execute(
+                "CALL public.sp_insert_file(%s, %s, %s, %s, %s);",
+                (material_id, path, observacion, url_file, extension),
+            )
+            conn.commit()
+        except Exception:
+            # Ensure connection is usable after CALL failure
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            # Fallback INSERT. Try column 'extension' first, then legacy 'extencion'.
+            try:
+                cur.execute(
+                    """
+                    INSERT INTO public.tbl_files (id_material, path, observacion, url_file, extension, stack)
+                    VALUES (%s, %s, %s, %s, %s, 1)
+                    RETURNING archivo_id, id_material, path, observacion, url_file, extension, stack, created_at
+                    """,
+                    (material_id, path, observacion, url_file, extension),
+                )
+                row = cur.fetchone()
+                conn.commit()
+                return {k: normalize_value(v) for k, v in (row or {}).items()}
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                # Legacy column name 'extencion'
+                cur.execute(
+                    """
+                    INSERT INTO public.tbl_files (id_material, path, observacion, url_file, extencion, stack)
+                    VALUES (%s, %s, %s, %s, %s, 1)
+                    RETURNING archivo_id, id_material, path, observacion, url_file, extencion AS extension, stack, created_at
+                    """,
+                    (material_id, path, observacion, url_file, extension),
+                )
+                row = cur.fetchone()
+                conn.commit()
+                return {k: normalize_value(v) for k, v in (row or {}).items()}
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT archivo_id, id_material, path, observacion, url_file, extension, stack, created_at
+            FROM public.vw_files_attach
+            WHERE id_material = %s AND url_file = %s
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (material_id, url_file),
+        )
+        row = cur.fetchone()
+        return {k: normalize_value(v) for k, v in (row or {}).items()}
+
+def fetch_material_files(material_id: str) -> list[dict[str, Any]]:
+    from db import get_connection
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT archivo_id, id_material, path, observacion, url_file, extension, stack, created_at
+            FROM public.vw_files_attach
+            WHERE id_material = %s
+            ORDER BY created_at DESC
+            """,
+            (material_id,),
+        )
+        rows = cur.fetchall()
+    return [{k: normalize_value(v) for k, v in r.items()} for r in rows]
+
 def serialize_catalog_row(
     row: Dict[str, Any],
     *,
@@ -597,7 +762,8 @@ def serialize_catalog_row(
         "collection": row.get("collection") or "",
         "stack": bool(row.get("stack")),
         "url": row.get("url_catalogo") or "",
-        "cover_url": row.get("url_portada") or "",
+        # Prefer explicit external cover URL (url_cartula) when present, fallback to uploaded cover (url_portada)
+        "cover_url": (row.get("url_cartula") or row.get("url_portada") or ""),
         "created_at": (
             row.get("created_at").isoformat()
             if isinstance(row.get("created_at"), datetime)
@@ -680,6 +846,9 @@ def pull_chat_messages(session_id: str) -> List[Dict[str, Any]]:
 
 
 app = Flask(__name__)
+# Basic logging (LOG_LEVEL env can override)
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+logger = logging.getLogger("app")
 
 # -------------------------------
 # CORS policy
@@ -784,13 +953,22 @@ def api_materiales():
         "tipo": get_multi("tipo"),
         "categoria": get_multi("categoria"),
         "provider_name": get_multi("provider_name"),
+        "id": get_multi("id"),
     }
-    sort_by = request.args.get("sort_by", type=str, default="id")
+    sort_by = request.args.get("sort_by", type=str, default="cost")
     sort_dir = request.args.get("sort_dir", type=str, default="asc")
     page = request.args.get("page", type=int, default=1)
     per_page = request.args.get("per_page", type=int, default=20)
 
     try:
+        app.logger.info(
+            "materials.list query filters=%s sort_by=%s sort_dir=%s page=%s per_page=%s",
+            {k: v for k, v in filters.items() if v},
+            sort_by,
+            sort_dir,
+            page,
+            per_page,
+        )
         result = fetch_material_list_with_total(
             filters, sort_by=sort_by, sort_dir=sort_dir, page=max(1, page), per_page=max(1, min(per_page, 200))
         )
@@ -827,7 +1005,8 @@ def api_catalogs():
     """Manage PDF catalog uploads and listing."""
     if request.method == "POST":
         file = request.files.get("file")
-        cover = request.files.get("cover")  # optional portada/imagen
+        cover = request.files.get("cover")  # portada opcional (archivo)
+        caratula = request.files.get("caratula")  # carátula opcional (archivo)
         if not file or not file.filename:
             return jsonify({"error": "Selecciona un archivo PDF."}), 400
 
@@ -871,13 +1050,27 @@ def api_catalogs():
                     container_name=AZURE_BLOB_CATALOG_CONTAINER,
                     prefix="portadas_catalogo",
                 )
+            caratula_url = None
+            if caratula and caratula.filename:
+                car_mime = (caratula.mimetype or "").lower()
+                if not car_mime.startswith("image/"):
+                    return jsonify({"error": "La carátula debe ser una imagen."}), 400
+                caratula_url = upload_blob_stream(
+                    caratula.stream,
+                    filename=caratula.filename,
+                    content_type=caratula.mimetype,
+                    container_name=AZURE_BLOB_CATALOG_CONTAINER,
+                    prefix="caratulas",
+                )
             record = create_catalog_entry(
                 catalog_name=catalog_name,
                 description=description,
                 collection=collection,
                 stack=stack,
                 url_catalogo=url,
-                url_portada=cover_url,
+                # Guardamos ambas URLs cuando existan
+                url_portada=(cover_url or None),
+                url_cartula=(caratula_url or None),
             )
             record = normalize_value(record)
             container = get_blob_container_client(AZURE_BLOB_CATALOG_CONTAINER)
@@ -934,12 +1127,26 @@ def api_catalog_stack(catalog_id: int):
 
 @app.route("/api/materiales/<material_id>/attachments")
 def api_material_attachments(material_id: str):
-    """List attachments for a material under blob path files/<id>."""
+    """List attachments using DB view; only stack=1 items are returned."""
     try:
-        prefix = f"files/{material_id.strip()}/"
-        items = list_container_files(AZURE_BLOB_CATALOG_CONTAINER, prefix)
+        data = fetch_material_files(material_id.strip())
+        items = []
+        for it in data:
+            if str(it.get("stack", 1)) in {"0", 0}:  # hidden
+                continue
+            name = (it.get("path") or it.get("url_file") or "").split("/")[-1]
+            items.append({
+                "archivo_id": it.get("archivo_id"),
+                "name": name,
+                "url": it.get("url_file"),
+                "ext": it.get("extension"),
+                "created_at": it.get("created_at"),
+                "observacion": it.get("observacion") or "",
+            })
+        logger.info("attachments.list material_id=%s count=%s", material_id, len(items))
         return jsonify({"items": items})
     except Exception as exc:  # pragma: no cover
+        logger.exception("attachments.list error material_id=%s", material_id)
         return jsonify({"error": str(exc), "items": []}), 500
 
 
@@ -953,6 +1160,15 @@ def api_material_attachment_upload(material_id: str):
     name = payload.get("name")
     content_type = payload.get("contentType") or payload.get("mimeType")
     try:
+        logger.info(
+            "attachments.upload start material_id=%s name=%s ct=%s data_len=%s container=%s has_conn=%s",
+            material_id,
+            name,
+            content_type,
+            len(data or ""),
+            AZURE_BLOB_CATALOG_CONTAINER,
+            bool(os.environ.get("AZURE_BLOB_CONNECTION_STRING")),
+        )
         url = upload_blob_from_base64_to_container(
             data,
             filename=name,
@@ -960,10 +1176,73 @@ def api_material_attachment_upload(material_id: str):
             container_name=AZURE_BLOB_CATALOG_CONTAINER,
             base_path=f"files/{material_id.strip()}",
         )
-        return jsonify({"url": url, "name": name, "contentType": content_type})
+        # insert DB record using SP (fallback to INSERT)
+        ext = (name.rsplit('.', 1)[-1].lower() if name and '.' in name else None)
+        path = f"/files/{material_id.strip()}/{os.path.basename(name or 'file')}"
+        rec = insert_file_record(
+            material_id=material_id.strip(),
+            path=path,
+            observacion=payload.get("observacion") or "",
+            url_file=url,
+            extension=ext,
+        )
+        logger.info("attachments.upload ok material_id=%s url=%s record_id=%s", material_id, url, rec.get("archivo_id") if isinstance(rec, dict) else None)
+        return jsonify({"url": url, "name": name, "contentType": content_type, "record": rec})
     except ValueError as exc:
+        logger.warning("attachments.upload value_error material_id=%s error=%s", material_id, exc)
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:  # pragma: no cover
+        logger.exception("attachments.upload error material_id=%s", material_id)
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/files/<int:file_id>/stack", methods=["POST"]) 
+def api_file_stack(file_id: int):
+    """Toggle stack flag; prefer SP and fallback to UPDATE with detailed logging."""
+    logger.info("files.stack toggle start file_id=%s", file_id)
+    try:
+        from db import get_connection
+        with get_connection() as conn, conn.cursor() as cur:
+            try:
+                cur.execute("CALL public.sp_toggle_stack_file(%s);", (file_id,))
+                conn.commit()
+                logger.info("files.stack toggled via SP file_id=%s", file_id)
+            except Exception as sp_exc:
+                logger.warning("files.stack SP failed file_id=%s error=%s; falling back", file_id, sp_exc)
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                cur.execute(
+                    "UPDATE public.tbl_files SET stack = CASE WHEN stack=1 THEN 0 ELSE 1 END WHERE archivo_id=%s RETURNING archivo_id, stack;",
+                    (file_id,),
+                )
+                row = cur.fetchone()
+                conn.commit()
+                if not row:
+                    logger.warning("files.stack fallback: file not found file_id=%s", file_id)
+                    return jsonify({"error": "Archivo no encontrado"}), 404
+                logger.info("files.stack toggled via fallback file_id=%s stack=%s", file_id, row.get("stack"))
+
+        # Try to return current file row from the view for client convenience
+        try:
+            with get_connection() as conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT archivo_id, id_material, path, observacion, url_file, extension, stack, created_at
+                    FROM public.vw_files_attach
+                    WHERE archivo_id = %s
+                    """,
+                    (file_id,),
+                )
+                row = cur.fetchone()
+            payload = {k: normalize_value(v) for k, v in (row or {}).items()}
+        except Exception as fetch_exc:
+            logger.warning("files.stack view fetch failed file_id=%s error=%s", file_id, fetch_exc)
+            payload = {}
+        return jsonify({"ok": True, "file": payload})
+    except Exception as exc:  # pragma: no cover
+        logger.exception("files.stack toggle error file_id=%s", file_id)
         return jsonify({"error": str(exc)}), 500
 
 

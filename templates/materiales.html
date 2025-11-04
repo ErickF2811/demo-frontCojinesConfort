@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Materiales · Cojines Confort</title>
+    <title>Materiales Â· Cojines Confort</title>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" />
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
   </head>
@@ -12,7 +12,7 @@
       <nav class="sidebar">
         <h2 class="sidebar__title">Panel</h2>
         <button class="sidebar__link is-active" type="button" data-tab-target="list">Listado</button>
-        <button class="sidebar__link" type="button" data-tab-target="catalogs">Catálogos</button>
+        <button class="sidebar__link" type="button" data-tab-target="catalogs">CatÃ¡logos</button>
       </nav>
       <div class="layout__content">
         <section id="tab-panel-list" class="tab-panel tab-panel--active" data-tab-panel="list">
@@ -29,6 +29,10 @@
         <h2>Filtros</h2>
         <form id="filtersForm">
           <div class="filter-grid">
+            <label class="filter">
+              <span>ID</span>
+              <input type="text" id="filter-id" class="dropdown-input" placeholder="M00001" autocomplete="off" />
+            </label>
             <label class="filter">
               <span>Material</span>
               <div class="multi-dropdown" data-key="material_name">
@@ -72,7 +76,7 @@
               </div>
             </label>
             <label class="filter">
-              <span>Categoría</span>
+              <span>CategorÃ­a</span>
               <div class="multi-dropdown" data-key="categoria">
                 <input type="text" class="dropdown-input" id="dd-categoria" placeholder="Todos" autocomplete="off" />
                 <div class="dropdown-panel" id="panel-categoria">
@@ -111,14 +115,16 @@
         <header class="table-card__header">
           <div>
             <h2>Materiales</h2>
-            <p id="resultsSummary" class="results-summary">Preparando información…</p>
+            <p id="resultsSummary" class="results-summary">Preparando informaciÃ³nâ€¦</p>
           </div>
           <div class="table-card__controls">
-            <label for="perPage">Por página</label>
+            <label for="perPage">Por pÃ¡gina</label>
             <select id="perPage">
+              <option value="5" selected>5</option>
               <option value="10">10</option>
-              <option value="20" selected>20</option>
+              <option value="20">20</option>
               <option value="50">50</option>
+              <option value="75">75</option>
               <option value="100">100</option>
             </select>
           </div>
@@ -131,11 +137,11 @@
                 <th id="thSortId" class="sortable" data-sort="id">ID</th>
                 <th>Material</th>
                 <th>Color</th>
-                <th>Categoría</th>
-                <th>Proveedor</th>
-                <th>Unidad</th>
-                <th class="text-right">Costo unitario</th>
                 <th id="thSortStock" class="text-right sortable" data-sort="stock">Stock</th>
+                <th>Proveedor</th>
+                <th id="thSortCost" class="text-right sortable" data-sort="cost">Costo unitario</th>
+                <th>Unidad</th>
+                <th>Categoría</th>
                 <th>Tipo</th>
               </tr>
             </thead>
@@ -162,40 +168,44 @@
         <section id="tab-panel-catalogs" class="tab-panel" data-tab-panel="catalogs" hidden>
           <header class="page-header">
             <div>
-              <h1>Catálogos PDF</h1>
-              <p class="subtitle">Carga y consulta los catálogos en PDF alojados en Azure Blob Storage.</p>
+              <h1>CatÃ¡logos PDF</h1>
+              <p class="subtitle">Carga y consulta los catÃ¡logos en PDF alojados en Azure Blob Storage.</p>
             </div>
           </header>
           <main class="catalog-main">
             <section class="catalog-upload card">
-              <h2>Subir catálogo</h2>
+              <h2>Subir catÃ¡logo</h2>
               <form id="catalogUploadForm" class="catalog-form">
                 <div class="form-field">
-                  <label for="catalogName">Nombre del catálogo</label>
-                  <input type="text" id="catalogName" name="catalog_name" maxlength="255" required placeholder="Ej. Colección verano" />
+                  <label for="catalogName">Nombre del catÃ¡logo</label>
+                  <input type="text" id="catalogName" name="catalog_name" maxlength="255" required placeholder="Ej. ColecciÃ³n verano" />
                 </div>
                 <div class="form-field">
-                  <label for="catalogDescription">Descripción</label>
-                  <textarea id="catalogDescription" name="description" maxlength="255" required placeholder="Describe el contenido del catálogo"></textarea>
+                  <label for="catalogDescription">DescripciÃ³n</label>
+                  <textarea id="catalogDescription" name="description" maxlength="255" required placeholder="Describe el contenido del catÃ¡logo"></textarea>
                 </div>
                 <div class="form-field">
-                  <label for="catalogCollection">Colección</label>
+                  <label for="catalogCollection">ColecciÃ³n</label>
                   <input type="text" id="catalogCollection" name="collection" maxlength="255" placeholder="Ej. Temporada 2025" />
                 </div>
                 <label class="catalog-stack-toggle" for="catalogStack">
                   <input type="checkbox" id="catalogStack" name="stack" />
-                  <span>Marcar como catálogo destacado</span>
+                  <span>Marcar como catÃ¡logo destacado</span>
                 </label>
                 <label class="file-field" for="catalogFile">
                   <input type="file" id="catalogFile" accept="application/pdf" required />
-                  <span id="catalogFileLabel">Selecciona un archivo PDF…</span>
+                  <span id="catalogFileLabel">Selecciona un archivo PDFâ€¦</span>
                 </label>
                 <label class="file-field" for="catalogCover">
                   <input type="file" id="catalogCover" accept="image/*" />
                   <span id="catalogCoverLabel">Adjunta una portada (opcional)…</span>
                 </label>
+                <label class="file-field" for="catalogCaratula">
+                  <input type="file" id="catalogCaratula" accept="image/*" />
+                  <span id="catalogCaratulaLabel">Adjuntar carátula (opcional)…</span>
+                </label>
                 <div class="catalog-actions">
-                  <button type="submit" class="button button-primary">Subir catálogo</button>
+                  <button type="submit" class="button button-primary">Subir catÃ¡logo</button>
                   <button type="button" class="button button-muted" id="catalogClear">Limpiar</button>
                 </div>
               </form>
@@ -204,11 +214,11 @@
 
             <section class="catalog-list card">
               <header class="catalog-list__header">
-                <h2>Catálogos disponibles</h2>
+                <h2>CatÃ¡logos disponibles</h2>
                 <button type="button" class="button button-secondary" id="catalogRefresh">Actualizar</button>
               </header>
               <div id="catalogList" class="catalog-list__body">
-                <p class="empty">No hay catálogos disponibles.</p>
+                <p class="empty">No hay catÃ¡logos disponibles.</p>
               </div>
             </section>
           </main>
@@ -245,7 +255,7 @@
             </aside>
             <div class="main">
               <div class="card">
-                <h4>Gráfica</h4>
+                <h4>GrÃ¡fica</h4>
                 <div class="chart-scroll">
                   <div id="chart" class="chart large"></div>
                 </div>
@@ -298,10 +308,11 @@
       window.CHAT_WEBHOOK_URL = {{ chat_webhook_url|tojson }};
     </script>
     <script src="{{ url_for('static', filename='chat.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='catalogos.js') }}" defer></script>
     <script src="{{ url_for('static', filename='materiales.js') }}" defer></script>
 
     <button id="chatFab" class="chat-fab" type="button" aria-label="Abrir chat de soporte">
-      💬
+      ðŸ’¬
     </button>
 
     <section id="chatPanel" class="chat-panel" aria-live="polite" aria-hidden="true">
@@ -319,11 +330,11 @@
           <textarea id="chatInput" placeholder="Escribe tu mensaje..." aria-label="Mensaje"></textarea>
           <div class="chat-actions">
             <label class="chat-upload" aria-label="Adjuntar archivo">
-              📎
+              ðŸ“Ž
               <input id="chatUpload" type="file" accept="image/*" />
             </label>
             <button id="chatRecord" type="button" class="chat-record">
-              <span>🎙️</span>
+              <span>ðŸŽ™ï¸</span>
               Voz
             </button>
             <button id="chatSend" type="submit" class="chat-send">
@@ -336,3 +347,5 @@
     </section>
   </body>
 </html>
+
+

@@ -16,7 +16,8 @@ def list_catalog_entries() -> List[Dict[str, Any]]:
             collection,
             stack,
             url_catalogo,
-            url_portada
+            url_portada,
+            url_cartula
         FROM tbl_catalogo
         ORDER BY created_at DESC, catalog_id DESC
     """
@@ -34,6 +35,7 @@ def create_catalog_entry(
     stack: bool,
     url_catalogo: str,
     url_portada: Optional[str] = None,
+    url_cartula: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Insert a new catalog record. Allows multiple featured entries.
 
@@ -44,11 +46,21 @@ def create_catalog_entry(
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO tbl_catalogo (catalog_name, description, collection, stack, url_catalogo, url_portada)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            RETURNING catalog_id, created_at, catalog_name, description, collection, stack, url_catalogo, url_portada
+            INSERT INTO tbl_catalogo (
+                catalog_name, description, collection, stack, url_catalogo, url_portada, url_cartula
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING catalog_id, created_at, catalog_name, description, collection, stack, url_catalogo, url_portada, url_cartula
             """,
-            (catalog_name, description, collection, stack_value, url_catalogo, url_portada),
+            (
+                catalog_name,
+                description,
+                collection,
+                stack_value,
+                url_catalogo,
+                url_portada,
+                url_cartula,
+            ),
         )
         record = cur.fetchone()
         conn.commit()
@@ -80,7 +92,7 @@ def update_catalog_stack(catalog_id: int, value: bool) -> Dict[str, Any]:
         )
         cur.execute(
             """
-            SELECT catalog_id, created_at, catalog_name, description, collection, stack, url_catalogo, url_portada
+            SELECT catalog_id, created_at, catalog_name, description, collection, stack, url_catalogo, url_portada, url_cartula
             FROM tbl_catalogo
             WHERE catalog_id = %s
             """,

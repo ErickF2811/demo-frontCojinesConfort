@@ -147,10 +147,63 @@ templates/           # Plantillas HTML
 - Vistas:
   - `public.vista_materiales_proveedores`: base del listado y del detalle de materiales.
   - `public.vista_movimientos`: movimientos recientes para el modal de detalle.
-- Procedimientos almacenados (SP): la aplicación no llama a ningún SP para adjuntos. Los
-  archivos se manejan directamente en Azure Blob Storage. Si deseas registrar cada archivo
-  también en la base de datos, puedes usar un SP propio como el que muestras (`sp_insert_file`)
-  al completar la subida (p. ej., con los campos `id_material`, `path`, `descripcion`, `url`, `tipo`).
+  - `public.vw_files_attach`: lista los adjuntos registrados en `public.tbl_files`.
+- Procedimientos almacenados (SP) para adjuntos:
+  - `public.sp_insert_file(id_material, path, observacion, url_file, extension)` inserta un registro en `tbl_files`.
+  - `public.sp_toggle_stack_file(p_archivo_id)` alterna el campo `stack` (1↔0) para ocultar/mostrar.
+
+SQL de soporte (recomendado)
+
+```sql
+-- Vista de adjuntos
+CREATE OR REPLACE VIEW public.vw_files_attach AS
+SELECT 
+    archivo_id,
+    id_material,
+    path,
+    observacion,
+    url_file,
+    extension,
+    stack,
+    created_at
+FROM public.tbl_files
+ORDER BY created_at DESC;
+
+-- SP insertar adjunto (alineado a tbl_files)
+CREATE OR REPLACE PROCEDURE public.sp_insert_file(
+    p_id_material VARCHAR(10),
+    p_path TEXT,
+    p_observacion VARCHAR(240),
+    p_url_file VARCHAR(240),
+    p_extension VARCHAR(10)
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  INSERT INTO public.tbl_files (
+    id_material, path, observacion, url_file, extension, stack, created_at
+  ) VALUES (
+    p_id_material, p_path, p_observacion, p_url_file, p_extension, 1, NOW()
+  );
+END;
+$$;
+
+-- SP alternar visibilidad (stack)
+CREATE OR REPLACE PROCEDURE public.sp_toggle_stack_file(
+    IN p_archivo_id INT
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.tbl_files WHERE archivo_id = p_archivo_id) THEN
+    RAISE EXCEPTION 'El archivo % no existe.', p_archivo_id;
+  END IF;
+  UPDATE public.tbl_files
+  SET stack = CASE WHEN stack = 1 THEN 0 ELSE 1 END
+  WHERE archivo_id = p_archivo_id;
+END;
+$$;
+```
 
 ### Adjuntos en la interfaz
 
@@ -204,7 +257,7 @@ Notas de compatibilidad
 
 ```powershell
 $IMAGE_NAME = "cojines-app"
-$VERSION = "v5.0"
+$VERSION = "v6.0"
 $REGISTRY_USER = "erifcamp"
 docker build -t ${IMAGE_NAME}:${VERSION} .
 docker tag ${IMAGE_NAME}:${VERSION} ${REGISTRY_USER}/${IMAGE_NAME}:${VERSION}
@@ -224,6 +277,7 @@ El panel “Catálogos PDF” permite subir, listar y marcar como destacados los
   - `stack` SMALLINT NOT NULL DEFAULT 0 — indicador “Destacado” (0/1). Se permiten múltiples destacados a la vez.
   - `url_catalogo` TEXT NOT NULL — URL pública del PDF en Azure Blob (`catalogs/<uuid>.pdf`)
   - `url_portada` TEXT NULL — URL pública de la portada en Azure Blob (`portadas_catalogo/<uuid>.<ext>`)
+  - `url_cartula` TEXT NULL — URL pública de la carátula en Azure Blob (`caratulas/<uuid>.<ext>`)
 
 DDL de referencia (PostgreSQL):
 
@@ -251,6 +305,7 @@ Convenciones en Azure Blob
 
 - PDFs: carpeta `catalogs/`
 - Portadas (imágenes): carpeta `portadas_catalogo/`
+- Carátulas (imágenes): carpeta `caratulas/`
 
 Endpoints del módulo
 
@@ -261,7 +316,7 @@ Endpoints del módulo
   - `stack` (“1”|“0”, opcional)
   - `file` (PDF requerido)
   - `cover` (imagen opcional)
-  Sube `file` a `catalogs/` y `cover` a `portadas_catalogo/` y guarda sus URLs en la tabla.
+  Sube `file` a `catalogs/`, `cover` a `portadas_catalogo/` y `caratula` a `caratulas/`, y guarda sus URLs en la tabla.
 - `POST /api/catalogs/<catalog_id>/stack`: marca o desmarca “Destacado” sin afectar a otros. Body JSON: `{ "value": true|false }`.
 
 Notas
