@@ -257,7 +257,7 @@ Notas de compatibilidad
 
 ```powershell
 $IMAGE_NAME = "cojines-app"
-$VERSION = "v6.0"
+$VERSION = "v7.0"
 $REGISTRY_USER = "erifcamp"
 docker build -t ${IMAGE_NAME}:${VERSION} .
 docker tag ${IMAGE_NAME}:${VERSION} ${REGISTRY_USER}/${IMAGE_NAME}:${VERSION}

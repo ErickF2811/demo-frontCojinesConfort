@@ -3,6 +3,8 @@ import io
 import mimetypes
 import os
 import logging
+import time
+import traceback
 import urllib.parse
 import urllib.request
 from collections import defaultdict, deque
@@ -11,7 +13,7 @@ from decimal import Decimal
 from typing import Any, Deque, Dict, List
 from uuid import uuid4
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, g
 
 from db import get_connection
 from services.catalogs import (
@@ -849,6 +851,71 @@ app = Flask(__name__)
 # Basic logging (LOG_LEVEL env can override)
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("app")
+logger.propagate = True
+
+# -------------------------------------------------
+# Request/response logging (printed to console)
+# -------------------------------------------------
+
+@app.before_request
+def _log_request_start():
+    try:
+        g._req_started_at = time.perf_counter()
+        # Small request id to correlate start/finish lines
+        g._req_id = uuid4().hex[:8]
+        logger.info(
+            "[%s] %s %s from %s",  # noqa: G004
+            g._req_id,
+            request.method,
+            request.path,
+            request.headers.get("X-Forwarded-For") or request.remote_addr,
+        )
+        if request.method in {"POST", "PUT", "PATCH"}:
+            # Best-effort body preview (avoid huge dumps)
+            try:
+                if request.content_type and "application/json" in request.content_type.lower():
+                    payload = request.get_json(silent=True)
+                    logger.info("[%s] body: %s", g._req_id, str(payload)[:1000])
+                else:
+                    logger.info("[%s] body: %s", g._req_id, str({k: v for k, v in request.form.items()})[:1000])
+            except Exception:
+                pass
+    except Exception:
+        # Never break the request on logging failures
+        pass
+
+
+@app.after_request
+def _log_request_end(response):
+    try:
+        started = getattr(g, "_req_started_at", None)
+        rid = getattr(g, "_req_id", "-")
+        dur_ms = None
+        if started is not None:
+            dur_ms = (time.perf_counter() - started) * 1000.0
+        logger.info(
+            "[%s] -> %s %s (%.1f ms)",  # noqa: G004
+            rid,
+            response.status_code,
+            request.path,
+            0.0 if dur_ms is None else dur_ms,
+        )
+    except Exception:
+        pass
+    return response
+
+
+@app.errorhandler(Exception)
+def _log_uncaught_error(exc):
+    try:
+        rid = getattr(g, "_req_id", "-")
+        logger.error("[%s] Unhandled error on %s %s", rid, request.method, request.path)
+        logger.error("%s", traceback.format_exc())
+    except Exception:
+        pass
+    # Preserve original message but avoid exposing internals
+    msg = str(exc) or "Error interno del servidor"
+    return jsonify({"error": msg}), 500
 
 # -------------------------------
 # CORS policy
