@@ -45,7 +45,24 @@
     const shouldOpen = typeof open === "boolean" ? open : !chatPanel.classList.contains("open");
     chatPanel.classList.toggle("open", shouldOpen);
     chatPanel.setAttribute("aria-hidden", shouldOpen ? "false" : "true");
-    if (shouldOpen) chatInput?.focus();
+    // En móvil, al abrir ocupa toda la pantalla y ocultamos la burbuja
+    try {
+      const isMobile = window.matchMedia && window.matchMedia('(max-width: 640px)').matches;
+      if (shouldOpen) {
+        if (isMobile) {
+          document.body.classList.add('chat-open');
+          const fab = document.getElementById('chatFab');
+          if (fab) fab.style.display = 'none';
+        }
+        chatInput?.focus();
+      } else {
+        if (isMobile) {
+          document.body.classList.remove('chat-open');
+          const fab = document.getElementById('chatFab');
+          if (fab) fab.style.display = '';
+        }
+      }
+    } catch {}
   }
 
   function appendChatMessage(role, text, attachments = [], timestamp = new Date()) {
@@ -422,7 +439,8 @@
     chatPanel.classList.remove("open");
     chatPanel.setAttribute("aria-hidden", "true");
 
-    chatFab.addEventListener("click", () => toggleChatPanel(true));
+    // Toggle: si está abierto, lo minimiza; si está cerrado, lo abre
+    chatFab.addEventListener("click", () => toggleChatPanel());
     chatClose?.addEventListener("click", () => toggleChatPanel(false));
     chatForm.addEventListener("submit", submitChatForm);
     chatUpload?.addEventListener("change", async (event) => {

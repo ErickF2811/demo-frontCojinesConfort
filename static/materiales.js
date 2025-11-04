@@ -906,11 +906,15 @@ async function openDetail(idMaterial, baseData) {
   }
 }
 
-function detectKind(mime) {
+function detectKind(mime, filename) {
   const m = (mime || '').toLowerCase();
   if (m.startsWith('image/')) return 'image';
   if (m.startsWith('video/')) return 'video';
   if (m.includes('pdf')) return 'pdf';
+  const ext = ((filename || '').split('.').pop() || '').toLowerCase();
+  if (['jpg','jpeg','png','gif','webp','bmp','svg','avif','heic'].includes(ext)) return 'image';
+  if (['mp4','webm','ogg','mov','m4v'].includes(ext)) return 'video';
+  if (ext === 'pdf') return 'pdf';
   return 'file';
 }
 
@@ -928,14 +932,45 @@ async function loadAttachments(id) {
   const frag = document.createDocumentFragment();
   items.forEach((it) => {
     const row = document.createElement('div');
-    row.className = 'att-item';
-    const kind = detectKind(it.content_type || '');
-    row.innerHTML = `
-      <span class="att-name" title="${it.name}">${it.name}</span>
-      <div class="att-item-actions">
-        <button type="button" class="button button-muted btn-view" data-url="${it.url}" data-kind="${kind}" data-name="${it.name}">Ver</button>
-        <a class="button button-secondary" href="${it.url}" target="_blank" rel="noopener">Abrir</a>
-      </div>`;
+    row.className = 'att-card';
+    const url = it.url || it.url_file || it.urlFile || it.path || '';
+    const displayName = it.name || (it.path ? String(it.path).split('/').pop() : '') || (url ? String(url).split('/').pop() : '') || 'archivo';
+    const kind = detectKind(it.content_type || '', displayName);
+    const thumb = document.createElement('div');
+    thumb.className = 'att-thumb';
+    if (kind === 'image') {
+      thumb.innerHTML = `<img src="${url}" alt="${displayName}" />`;
+    } else if (kind === 'video') {
+      thumb.innerHTML = `<div class="att-icon">🎞️</div>`;
+    } else if (kind === 'pdf') {
+      thumb.innerHTML = `<div class="att-icon">PDF</div>`;
+    } else {
+      thumb.innerHTML = `<div class="att-icon">📄</div>`;
+    }
+
+    const meta = document.createElement('div');
+    meta.className = 'att-meta';
+    const name = document.createElement('div');
+    name.className = 'att-name';
+    name.title = displayName;
+    name.textContent = displayName;
+    const actions = document.createElement('div');
+    actions.className = 'att-actions';
+    const btnDownload = document.createElement('a');
+    btnDownload.className = 'button button-secondary';
+    btnDownload.href = url; btnDownload.target = '_blank'; btnDownload.rel = 'noopener';
+    btnDownload.textContent = 'Descargar';
+    const btnView = document.createElement('button');
+    btnView.type = 'button'; btnView.className = 'button button-muted btn-view';
+    btnView.dataset.url = url; btnView.dataset.kind = kind; btnView.dataset.name = displayName || 'archivo';
+    btnView.textContent = 'Ver';
+    const btnHide = document.createElement('button');
+    btnHide.type = 'button'; btnHide.className = 'button button-muted btn-hide';
+    btnHide.dataset.id = String(it.archivo_id || it.id || '');
+    btnHide.textContent = 'Ocultar';
+    actions.append(btnDownload, btnView, btnHide);
+    meta.append(name, actions);
+    row.append(thumb, meta);
     frag.appendChild(row);
   });
   attList.innerHTML = '';

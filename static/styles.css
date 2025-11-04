@@ -336,6 +336,10 @@ tbody tr:hover {
   display: flex; justify-content: space-between; align-items: center; gap: 1rem;
   border-bottom: 1px solid var(--border);
   padding: 0.5rem 0 1rem;
+  position: sticky; /* se mantiene visible al hacer scroll en la cartilla */
+  top: 0;
+  z-index: 5;
+  background: var(--surface);
 }
 .material-header { display: flex; align-items: center; gap: 1rem; }
 .muted { color: var(--muted); }
@@ -418,6 +422,16 @@ img { max-width: 100%; height: auto; }
 
 /* Make charts responsive */
 .chart svg { max-width: 100%; height: auto; display: block; }
+
+/* Attachments list */
+.att-list { display: flex; flex-direction: column; gap: 0.6rem; }
+.att-card { display: flex; align-items: center; gap: 0.9rem; padding: 0.6rem 0.75rem; border: 1px solid var(--border); border-radius: 12px; background: #f8fafc; }
+.att-thumb { width: 72px; height: 72px; flex: 0 0 auto; border-radius: 10px; background: #e2e8f0; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 1px solid var(--border); }
+.att-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.att-icon { font-weight: 700; color: #0f172a; }
+.att-meta { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+.att-name { color: #0f172a; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; max-width: 100%; }
+.att-actions { display: inline-flex; gap: 0.5rem; flex-wrap: wrap; }
 
 /* Mobile modal refinements to avoid overflow and stack content nicely */
 @media (max-width: 640px) {
@@ -726,6 +740,12 @@ img { max-width: 100%; height: auto; }
   cursor: pointer;
   z-index: 1500;
 }
+.chat-fab--inline {
+  position: static !important;
+  width: 48px;
+  height: 48px;
+  box-shadow: none;
+}
 .chat-fab:focus-visible {
   outline: 3px solid rgba(37, 99, 235, 0.5);
   outline-offset: 4px;
@@ -750,6 +770,8 @@ img { max-width: 100%; height: auto; }
 .chat-panel.open {
   display: flex;
 }
+/* Hide FAB while modal detail is open to avoid overlap */
+body.no-scroll .chat-fab { display: none !important; }
 .chat-header {
   padding: 1rem 1.25rem;
   display: flex;
@@ -928,23 +950,37 @@ img { max-width: 100%; height: auto; }
     bottom: 18px;
     right: 18px;
   }
+  /* Ocultar la burbuja si el panel está abierto (vía clase en body) */
+  body.chat-open .chat-fab { display: none !important; }
+  /* En móvil, desplegar panel a pantalla completa para mejor uso */
   .chat-panel {
-    right: 12px;
-    bottom: 80px;
-    width: calc(100vw - 24px);
-    height: calc(100vh - 120px);
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: 100vw !important;
+    max-height: 100vh !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    z-index: 2000 !important;
   }
+  body.chat-open { overflow: hidden; height: 100vh; }
 }
 
 @media (max-width: 400px) {
   .chat-panel {
-    bottom: 76px;
-    width: calc(100vw - 20px);
-    right: 10px;
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: 100vw !important;
+    max-height: 100vh !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
   }
-  .chat-footer textarea {
-    min-height: 56px;
-  }
+  .chat-footer textarea { min-height: 56px; }
 }
 /* Ultra-compact card layout on small phones */
 @media (max-width: 640px) {
