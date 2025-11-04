@@ -36,6 +36,7 @@
                 <div class="dropdown-panel" id="panel-material_name">
                   <div class="dropdown-actions">
                     <button class="link" type="button" data-action="select-all" data-key="material_name">Seleccionar todo</button>
+                    <button class="link" type="button" data-action="apply" data-key="material_name">Aplicar</button>
                     <button class="link" type="button" data-action="clear" data-key="material_name">Limpiar</button>
                   </div>
                   <div class="options" id="opts-material_name"></div>
@@ -49,6 +50,7 @@
                 <div class="dropdown-panel" id="panel-color">
                   <div class="dropdown-actions">
                     <button class="link" type="button" data-action="select-all" data-key="color">Seleccionar todo</button>
+                    <button class="link" type="button" data-action="apply" data-key="color">Aplicar</button>
                     <button class="link" type="button" data-action="clear" data-key="color">Limpiar</button>
                   </div>
                   <div class="options" id="opts-color"></div>
@@ -62,6 +64,7 @@
                 <div class="dropdown-panel" id="panel-tipo">
                   <div class="dropdown-actions">
                     <button class="link" type="button" data-action="select-all" data-key="tipo">Seleccionar todo</button>
+                    <button class="link" type="button" data-action="apply" data-key="tipo">Aplicar</button>
                     <button class="link" type="button" data-action="clear" data-key="tipo">Limpiar</button>
                   </div>
                   <div class="options" id="opts-tipo"></div>
@@ -75,6 +78,7 @@
                 <div class="dropdown-panel" id="panel-categoria">
                   <div class="dropdown-actions">
                     <button class="link" type="button" data-action="select-all" data-key="categoria">Seleccionar todo</button>
+                    <button class="link" type="button" data-action="apply" data-key="categoria">Aplicar</button>
                     <button class="link" type="button" data-action="clear" data-key="categoria">Limpiar</button>
                   </div>
                   <div class="options" id="opts-categoria"></div>
@@ -88,6 +92,7 @@
                 <div class="dropdown-panel" id="panel-provider_name">
                   <div class="dropdown-actions">
                     <button class="link" type="button" data-action="select-all" data-key="provider_name">Seleccionar todo</button>
+                    <button class="link" type="button" data-action="apply" data-key="provider_name">Aplicar</button>
                     <button class="link" type="button" data-action="clear" data-key="provider_name">Limpiar</button>
                   </div>
                   <div class="options" id="opts-provider_name"></div>
@@ -261,6 +266,15 @@
                     <tbody id="obsTable"></tbody>
                   </table>
                 </div>
+              </div>
+              <div class="card">
+                <h4>Archivos adjuntos</h4>
+                <div class="att-actions">
+                  <input id="attFile" type="file" accept="image/*,video/*,application/pdf" hidden />
+                  <button id="attUploadBtn" class="button button-muted" type="button">Adjuntar</button>
+                </div>
+                <div id="attList" class="att-list"><p class="empty">Sin archivos</p></div>
+                <div id="attViewer" class="att-viewer" hidden></div>
               </div>
             </div>
           </div>

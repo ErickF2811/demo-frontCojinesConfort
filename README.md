@@ -117,6 +117,14 @@ docker compose up --build
 - `GET /api/stock`: responde con el stock agrupado por material y tipo de movimiento.
   Acepta filtros opcionales mediante parámetros de consulta (`material_name`, `color`,
   `tipo`, `categoria`, `provider_name`).
+- `GET /api/materiales`: listado paginado de materiales desde la vista `public.vista_materiales_proveedores`.
+- `GET /api/materiales/{id}`: detalle de un material con `image_url` y `stock_actual` desde `public.vista_materiales_proveedores`.
+- `GET /api/materiales/{id}/movimientos?limit=5`: últimos movimientos desde `public.vista_movimientos`.
+- Adjuntos por material (Azure Blob, contenedor `AZURE_BLOB_CATALOG_CONTAINER`):
+  - `GET /api/materiales/{id}/attachments`: lista blobs bajo `files/{id}/` devolviendo `{ items: [{ name, url, size, content_type }] }`.
+  - `POST /api/materiales/{id}/attachments/upload`: sube un archivo en base64 al prefijo `files/{id}/`.
+    Cuerpo JSON: `{ "name": "archivo.ext", "contentType": "image/jpeg|video/mp4|application/pdf", "data": "data:...;base64,..." }`.
+    Respuesta: `{ url, name, contentType }`.
 
 ## Estructura del proyecto
 
@@ -133,6 +141,25 @@ templates/           # Plantillas HTML
 - Los nombres de proveedores se obtienen directamente desde la tabla `tbl_proveedores`.
 - Los filtros buscan coincidencias parciales (uso de `ILIKE`) para facilitar la búsqueda.
 - Los filtros del listado aceptan múltiples valores por clave (p. ej., `?tipo=Tela&tipo=relleno`).
+
+### Vistas y procedimientos usados
+
+- Vistas:
+  - `public.vista_materiales_proveedores`: base del listado y del detalle de materiales.
+  - `public.vista_movimientos`: movimientos recientes para el modal de detalle.
+- Procedimientos almacenados (SP): la aplicación no llama a ningún SP para adjuntos. Los
+  archivos se manejan directamente en Azure Blob Storage. Si deseas registrar cada archivo
+  también en la base de datos, puedes usar un SP propio como el que muestras (`sp_insert_file`)
+  al completar la subida (p. ej., con los campos `id_material`, `path`, `descripcion`, `url`, `tipo`).
+
+### Adjuntos en la interfaz
+
+En el modal de detalle se añadió la sección “Archivos adjuntos”:
+- Botón “Adjuntar”: abre el selector de archivos. El archivo se sube al contenedor configurado
+  en `AZURE_BLOB_CATALOG_CONTAINER`, bajo `files/{ID_MATERIAL}/`.
+- Lista de adjuntos: muestra nombre + acciones “Ver” y “Abrir”.
+  - Imagen/Video: se previsualizan dentro del modal.
+  - PDF: no se previsualiza; se abre en una pestaña nueva.
 
 ## Tablas y vistas usadas (PostgreSQL)
 

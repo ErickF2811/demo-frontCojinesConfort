@@ -129,6 +129,7 @@ select:focus {
 .multi-dropdown.open .dropdown-panel { display: block; }
 .dropdown-actions { display: flex; justify-content: space-between; align-items: center; padding: 0.25rem 0.25rem 0.5rem; }
 .dropdown-actions .link { background: transparent; border: none; color: var(--primary); cursor: pointer; }
+.dropdown-actions .link[data-action="apply"] { color: #0f172a; font-weight: 700; }
 .options { max-height: 220px; overflow: auto; padding: 0.25rem; display: grid; gap: 0.25rem; }
 .option-check { display: flex; align-items: center; gap: 0.6rem; padding: 0.25rem 0.35rem; border-radius: 8px; }
 .option-check:hover { background: #f1f5f9; }
@@ -356,6 +357,14 @@ tbody tr:hover {
 .preview { display: flex; justify-content: center; margin-bottom: 0.75rem; }
 .preview-img { max-width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--border); background: #f1f5f9; }
 img { max-width: 100%; height: auto; }
+
+/* Attachments block */
+.att-actions { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; align-items: center; }
+.att-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.att-item { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; padding: 0.45rem 0.5rem; border: 1px solid var(--border); border-radius: 10px; background: #f8fafc; }
+.att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
+.att-item-actions { display: inline-flex; gap: 0.5rem; }
+.att-viewer { margin-top: 0.75rem; }
 
 /* Ensure thumbnails remain perfect squares (override generic img rule) */
 .thumb {
@@ -793,6 +802,15 @@ img { max-width: 100%; height: auto; }
   color: var(--secondary);
   max-width: 85%;
   box-shadow: 0 10px 18px rgba(148, 163, 184, 0.35);
+  /* prevent long URLs/ids from overflowing */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: pre-wrap; /* keep line breaks from text but allow wrap */
+}
+.chat-bubble p,
+.chat-bubble a {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .chat-message--user .chat-bubble {
   background: rgba(37, 99, 235, 0.85);

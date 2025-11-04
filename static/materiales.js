@@ -456,7 +456,7 @@ resetButton.addEventListener("click", () => {
   fetchMaterials();
 });
 
-window.addEventListener("DOMContentLoaded", () => {
+  window.addEventListener("DOMContentLoaded", () => {
   syncMobileLayoutClass();
   mobileMediaQuery.addEventListener('change', syncMobileLayoutClass);
   fetchFilters().then(fetchMaterials);
@@ -484,18 +484,59 @@ window.addEventListener("DOMContentLoaded", () => {
   prevPageBtn?.addEventListener('click', () => {
     if (currentPage > 1) { currentPage -= 1; fetchMaterials(); }
   });
-  nextPageBtn?.addEventListener('click', () => {
+    nextPageBtn?.addEventListener('click', () => {
     const totalPages = Math.max(1, Math.ceil(totalItems / perPage));
     if (currentPage < totalPages) { currentPage += 1; fetchMaterials(); }
   });
-  pageInput?.addEventListener('change', () => {
+    pageInput?.addEventListener('change', () => {
     const totalPages = Math.max(1, Math.ceil(totalItems / perPage));
     let p = Number(pageInput.value || 1) || 1;
     p = Math.max(1, Math.min(totalPages, p));
     currentPage = p;
     fetchMaterials();
-  });
+    });
 
+    // Attachments interactions
+    attUploadBtn?.addEventListener('click', () => attFile?.click());
+    attFile?.addEventListener('change', async () => {
+      try {
+        if (!attFile.files || !attFile.files.length) return;
+        const file = attFile.files[0];
+        const dataUrl = await readFileAsDataURL(file);
+        const currentId = (detailTitle?.textContent || '').split('·').pop()?.trim() || '';
+        // If we cannot infer from title, try from last opened map
+        const idAttr = window.__lastMaterialId || '';
+        const id = currentId || idAttr;
+        if (!id) return;
+        await fetch(`/api/materiales/${encodeURIComponent(id)}/attachments/upload`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: file.name, contentType: file.type, data: dataUrl }),
+        });
+        await loadAttachments(id);
+      } finally {
+        attFile.value = '';
+      }
+    });
+    attList?.addEventListener('click', (e) => {
+      const btn = e.target.closest('.btn-view');
+      if (!btn) return;
+      const url = btn.getAttribute('data-url');
+      const kind = btn.getAttribute('data-kind');
+      const name = btn.getAttribute('data-name') || 'archivo';
+      if (!url || !attViewer) return;
+      if (kind === 'image') {
+        attViewer.innerHTML = `<img src="${url}" alt="${name}" style="max-width:100%; height:auto; border-radius:8px;"/>`;
+      } else if (kind === 'video') {
+        attViewer.innerHTML = `<video src="${url}" controls style="width:100%; max-height:320px; border-radius:8px;"></video>`;
+      } else if (kind === 'pdf') {
+        attViewer.innerHTML = `<p class="muted">El PDF no se previsualiza aquí. <a href="${url}" target="_blank" rel="noopener">Abrir en nueva pestaña</a>.</p>`;
+      } else {
+        attViewer.innerHTML = `<p class="muted">Tipo no soportado. <a href="${url}" target="_blank" rel="noopener">Descargar</a></p>`;
+      }
+      attViewer.hidden = false;
+    });
+  
   tabButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
       const target = btn.dataset.tabTarget || 'list';
@@ -631,7 +672,7 @@ window.addEventListener("DOMContentLoaded", () => {
   document.addEventListener('click', (e) => {
     Object.values(filtersConfig).forEach(conf => conf.toggle?.parentElement.classList.remove('open'));
   });
-  // Actions: select-all / clear
+  // Actions: select-all / apply / clear
   document.querySelectorAll('.dropdown-actions .link').forEach(btn => {
     btn.addEventListener('click', (e) => {
       const key = btn.getAttribute('data-key');
@@ -646,6 +687,12 @@ window.addEventListener("DOMContentLoaded", () => {
       if (action === 'clear' && conf.toggle?.tagName === 'INPUT') {
         conf.toggle.value = '';
         filterOptions(key, '');
+      }
+      if (action === 'apply') {
+        // aplicar filtros y cerrar el dropdown
+        currentPage = 1;
+        fetchMaterials();
+        conf.toggle?.parentElement.classList.remove('open');
       }
     });
   });
@@ -666,6 +713,11 @@ const kpisEl = document.getElementById("kpis");
 const imgLightbox = document.getElementById("imgLightbox");
 const lightboxImg = document.getElementById("lightboxImg");
 const detailPreview = document.getElementById("detailPreview");
+// Attachments elements
+const attFile = document.getElementById("attFile");
+const attUploadBtn = document.getElementById("attUploadBtn");
+const attList = document.getElementById("attList");
+const attViewer = document.getElementById("attViewer");
 
 modalClose?.addEventListener("click", () => hideModal());
 // Cerrar al hacer clic fuera de la tarjeta (en el fondo) o en el contenedor modal
@@ -727,6 +779,8 @@ async function openDetail(idMaterial, baseData) {
   if (summaryEl) summaryEl.textContent = "Cargando…";
   if (kpisEl) kpisEl.innerHTML = "";
   showModal();
+  // remember id for later uploads
+  window.__lastMaterialId = idMaterial;
 
   try {
     // Fetch detail to ensure we have image_url/provider/category fresh from DB
@@ -831,6 +885,9 @@ async function openDetail(idMaterial, baseData) {
       }
     }
 
+    // Load attachments at the end
+    try { await loadAttachments(idMaterial); } catch {}
+
     // Redibujar al cambiar tamaño (responsive)
     window.__materialsLastMovs = movs;
     window.__materialsResizeHandler = () => {
@@ -847,6 +904,51 @@ async function openDetail(idMaterial, baseData) {
     obsTable.appendChild(tr);
     if (summaryEl) summaryEl.textContent = "";
   }
+}
+
+function detectKind(mime) {
+  const m = (mime || '').toLowerCase();
+  if (m.startsWith('image/')) return 'image';
+  if (m.startsWith('video/')) return 'video';
+  if (m.includes('pdf')) return 'pdf';
+  return 'file';
+}
+
+async function loadAttachments(id) {
+  if (!attList) return;
+  attList.innerHTML = '<p class="empty">Cargando archivos...</p>';
+  const res = await fetch(`/api/materiales/${encodeURIComponent(id)}/attachments`);
+  const data = await res.json().catch(() => ({}));
+  const items = Array.isArray(data.items) ? data.items : [];
+  if (!items.length) {
+    attList.innerHTML = '<p class="empty">Sin archivos</p>';
+    if (attViewer) { attViewer.hidden = true; attViewer.innerHTML = ''; }
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  items.forEach((it) => {
+    const row = document.createElement('div');
+    row.className = 'att-item';
+    const kind = detectKind(it.content_type || '');
+    row.innerHTML = `
+      <span class="att-name" title="${it.name}">${it.name}</span>
+      <div class="att-item-actions">
+        <button type="button" class="button button-muted btn-view" data-url="${it.url}" data-kind="${kind}" data-name="${it.name}">Ver</button>
+        <a class="button button-secondary" href="${it.url}" target="_blank" rel="noopener">Abrir</a>
+      </div>`;
+    frag.appendChild(row);
+  });
+  attList.innerHTML = '';
+  attList.appendChild(frag);
+}
+
+function readFileAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onerror = () => reject(new Error('No se pudo leer el archivo'));
+    fr.onload = () => resolve(fr.result);
+    fr.readAsDataURL(file);
+  });
 }
 
 // Expose opener globally for inline usage if needed

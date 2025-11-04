@@ -527,6 +527,61 @@ def upload_blob_stream(
     return f"{container_client.url}/{blob_path}"
 
 
+def upload_blob_from_base64_to_container(
+    data_base64: str,
+    *,
+    filename: str | None,
+    content_type: str | None,
+    container_name: str,
+    base_path: str | None = None,
+) -> str:
+    """Upload base64 content to a specific container/prefix and return its URL."""
+    if not data_base64:
+        raise ValueError("No se proporcionó data para subir al blob.")
+    if "," in data_base64:
+        data_base64 = data_base64.split(",", 1)[1]
+    try:
+        binary = base64.b64decode(data_base64)
+    except Exception as exc:
+        raise ValueError("No se pudo decodificar el contenido base64.") from exc
+
+    blob_name = build_blob_name(filename, content_type or "application/octet-stream")
+    prefix = base_path.strip("/\\") + "/" if base_path else ""
+    blob_path = f"{prefix}{blob_name}"
+
+    container_client = get_blob_container_client(container_name)
+    container_client.upload_blob(
+        name=blob_path,
+        data=binary,
+        overwrite=True,
+        content_type=content_type or "application/octet-stream",
+    )
+    return f"{container_client.url}/{blob_path}"
+
+
+def list_container_files(container_name: str, prefix: str) -> list[dict[str, Any]]:
+    """List blobs under the given prefix and return basic metadata."""
+    container = get_blob_container_client(container_name)
+    items: list[dict[str, Any]] = []
+    for blob in container.list_blobs(name_starts_with=prefix):
+        name = getattr(blob, "name", "")
+        size = getattr(blob, "size", None)
+        url = f"{container.url}/{name}"
+        content_type = None
+        try:
+            props = container.get_blob_client(name).get_blob_properties()
+            content_type = getattr(getattr(props, "content_settings", None), "content_type", None)
+        except Exception:
+            pass
+        items.append({
+            "name": name.split("/")[-1],
+            "path": name,
+            "url": url,
+            "size": size,
+            "content_type": content_type,
+        })
+    return items
+
 def serialize_catalog_row(
     row: Dict[str, Any],
     *,
@@ -873,6 +928,41 @@ def api_catalog_stack(catalog_id: int):
         return jsonify({"message": f"{msg}.", "catalog": payload_resp})
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 404
+    except Exception as exc:  # pragma: no cover
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/materiales/<material_id>/attachments")
+def api_material_attachments(material_id: str):
+    """List attachments for a material under blob path files/<id>."""
+    try:
+        prefix = f"files/{material_id.strip()}/"
+        items = list_container_files(AZURE_BLOB_CATALOG_CONTAINER, prefix)
+        return jsonify({"items": items})
+    except Exception as exc:  # pragma: no cover
+        return jsonify({"error": str(exc), "items": []}), 500
+
+
+@app.route("/api/materiales/<material_id>/attachments/upload", methods=["POST"])
+def api_material_attachment_upload(material_id: str):
+    """Upload an attachment (base64) to blob path files/<id>."""
+    payload = request.get_json(silent=True) or {}
+    data = payload.get("data")
+    if not data:
+        return jsonify({"error": "data es requerido"}), 400
+    name = payload.get("name")
+    content_type = payload.get("contentType") or payload.get("mimeType")
+    try:
+        url = upload_blob_from_base64_to_container(
+            data,
+            filename=name,
+            content_type=content_type,
+            container_name=AZURE_BLOB_CATALOG_CONTAINER,
+            base_path=f"files/{material_id.strip()}",
+        )
+        return jsonify({"url": url, "name": name, "contentType": content_type})
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     except Exception as exc:  # pragma: no cover
         return jsonify({"error": str(exc)}), 500
 
