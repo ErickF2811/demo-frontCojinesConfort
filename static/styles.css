@@ -808,20 +808,13 @@ body.no-scroll .chat-fab { display: none !important; }
   background: linear-gradient(180deg, rgba(226, 232, 240, 0.2), rgba(226, 232, 240, 0));
 }
 .chat-logs {
-  display: block;
-  background: #0b1220;
-  color: #d1d5db;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: 12px;
-  line-height: 1.35;
-  max-height: 140px;
-  overflow: auto;
-  padding: 8px 10px;
-  border-top: 1px solid rgba(148, 163, 184, 0.25);
+  /* Ocultamos completamente el contenedor de logs */
+  display: none !important;
 }
-.chat-logs .log-entry { white-space: pre-wrap; word-break: break-word; margin: 2px 0; }
-.chat-logs .log-entry .ts { color: #9ca3af; }
-.chat-logs .log-entry.err { color: #fecaca; }
+/* Evitamos que cualquier estilo de logs afecte el layout */
+.chat-logs .log-entry { display: none !important; }
+.chat-logs .log-entry .ts { display: none !important; }
+.chat-logs .log-entry.err { display: none !important; }
 .chat-message {
   display: flex;
   flex-direction: column;
@@ -1433,4 +1426,8 @@ body.no-scroll .chat-fab { display: none !important; }
   font-weight: 600;
   color: #1e293b;
 }
+
+/* Ocultar componentes de depuración del chat */
+#chatLogsToggle { display: none !important; }
+.chat-logs { display: none !important; }
 
