@@ -166,11 +166,11 @@ function renderTableRows(data) {
       <td data-label="ID">${item.id_material || ""}</td>
       <td data-label="Material"><span class="truncate" title="${item.material_name || ""}">${item.material_name || ""}</span></td>
       <td data-label="Color">${item.color || ""}</td>
-      <td data-label="Categoría"><span class="truncate" title="${item.categoria || ""}">${item.categoria || ""}</span></td>
-      <td data-label="Proveedor"><span class="truncate" title="${proveedorTxt}">${proveedorTxt}</span></td>
-      <td data-label="Unidad">${item.unidad || ""}</td>
-      <td data-label="Costo unitario" class="text-right">${cost === null ? "—" : cost.toLocaleString("es-ES", { style: "currency", currency: "USD" })}</td>
       <td data-label="Stock" class="text-right ${stock < 0 ? "text-danger" : ""}">${stock.toLocaleString("es-ES")}</td>
+      <td data-label="Proveedor"><span class="truncate" title="${proveedorTxt}">${proveedorTxt}</span></td>
+      <td data-label="Costo unitario" class="text-right">${cost === null ? "-" : cost.toLocaleString("es-ES", { style: "currency", currency: "USD" })}</td>
+      <td data-label="Unidad">${item.unidad || ""}</td>
+      <td data-label="Categoría"><span class="truncate" title="${item.categoria || ""}">${item.categoria || ""}</span></td>
       <td data-label="Tipo">${item.tipo || ""}</td>
     `;
     tableBody.appendChild(row);
@@ -183,7 +183,7 @@ function renderTableRows(data) {
 let sortBy = "id";
 let sortDir = "asc"; // asc | desc
 let currentPage = 1;
-let perPage = 20;
+let perPage = Number(perPageSelect?.value || 5) || 5;
 let totalItems = 0;
 
 async function fetchMaterials() {
@@ -477,7 +477,7 @@ resetButton.addEventListener("click", () => {
   });
   // Pager handlers
   perPageSelect?.addEventListener('change', () => {
-    perPage = Number(perPageSelect.value || 20) || 20;
+    perPage = Number(perPageSelect.value || 5) || 5;
     currentPage = 1;
     fetchMaterials();
   });
