@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Data · Cojines Confort</title>
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap"
+    />
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  </head>
+  <body>
+    {% set active_tab = "data" %}
+    <div class="layout layout--sticky-nav">
+      <nav class="sidebar">
+        <h2 class="sidebar__title">Panel</h2>
+        <a class="sidebar__link" href="{{ url_for('materiales_page') }}">Listado</a>
+        <a class="sidebar__link" href="{{ url_for('catalogos_page') }}">Catálogos</a>
+        <a class="sidebar__link" href="{{ url_for('cotizador_page') }}">Cotización</a>
+        <a class="sidebar__link is-active" href="{{ url_for('data_admin_page') }}">Data</a>
+      </nav>
+      <div class="layout__content">
+        {% include "partials/mobile_nav.html" %}
+        <section class="tab-panel tab-panel--active data-admin">
+          <header class="page-header">
+            <div>
+              <h1>Administración de datos</h1>
+              <p class="subtitle">
+                Gestiona tablas base de PostgreSQL. Puedes modificar un registro a la vez, eliminarlo,
+                importar nuevos datos desde CSV o exportar la tabla completa.
+              </p>
+            </div>
+            <div class="data-admin__toolbar" aria-live="polite">
+              <label class="data-admin__select">
+                <span>Tabla disponible</span>
+                <select id="dataTableSelect"></select>
+              </label>
+              <button id="dataReloadBtn" class="button button-secondary" type="button">
+                Recargar
+              </button>
+            </div>
+          </header>
+
+          <section class="card data-admin__actions-card">
+            <div>
+              <h2>Acciones</h2>
+              <p class="muted">
+                Exporta la tabla completa como CSV o importa un archivo con nuevas filas.
+              </p>
+            </div>
+            <div class="data-admin__actions">
+              <button id="dataExportBtn" class="button button-muted" type="button">
+                Exportar CSV
+              </button>
+              <button id="dataImportBtn" class="button button-primary" type="button">
+                Importar CSV
+              </button>
+              <input id="dataImportInput" type="file" accept=".csv,text/csv" hidden />
+            </div>
+          </section>
+
+          <section class="card data-admin__table-card">
+            <header class="data-admin__table-header">
+              <div>
+                <h2 id="dataTableTitle">Tabla seleccionada</h2>
+                <p id="dataTableMeta" class="muted"></p>
+              </div>
+              <div class="data-admin__pagination">
+                <button id="dataPrevPage" class="button button-muted" type="button">
+                  ←
+                </button>
+                <span id="dataPageIndicator">1 / 1</span>
+                <button id="dataNextPage" class="button button-muted" type="button">
+                  →
+                </button>
+              </div>
+            </header>
+            <div id="dataStatus" class="data-admin__status" aria-live="polite"></div>
+            <div class="table-wrapper data-admin__table-wrapper">
+              <table class="data-admin__table">
+                <thead id="dataTableHead"></thead>
+                <tbody id="dataTableBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+      </div>
+    </div>
+
+    <div id="dataEditorModal" class="modal hidden" aria-hidden="true">
+      <div class="modal__backdrop" data-close-editor></div>
+      <div class="modal__content data-admin__modal" role="dialog" aria-modal="true">
+        <header class="modal__header">
+          <div>
+            <h3 id="dataEditorTitle">Editar registro</h3>
+            <p class="muted" id="dataEditorSubtitle"></p>
+          </div>
+          <button class="button button-muted" type="button" data-close-editor>
+            Cerrar
+          </button>
+        </header>
+        <form id="dataEditorForm" class="data-admin__form"></form>
+        <footer class="modal__footer data-admin__modal-footer">
+          <div class="data-admin__footer-left">
+            <button class="button button-muted" type="button" data-close-editor>
+              Cancelar
+            </button>
+            <button class="button button-secondary" type="button" id="dataImageModalBtn" hidden>
+              Ver / actualizar imagen
+            </button>
+          </div>
+          <button class="button button-primary" type="submit" form="dataEditorForm">
+            Guardar cambios
+          </button>
+        </footer>
+      </div>
+    </div>
+
+    {% include "partials/auth_guard.html" %}
+
+    <input id="dataImageInput" type="file" accept="image/*" hidden />
+    <div id="dataLightbox" class="data-admin__lightbox" hidden aria-hidden="true" data-lightbox="true">
+      <div class="data-admin__lightbox-content">
+        <header class="data-admin__lightbox-header">
+          <h3>Vista previa</h3>
+          <p class="muted">Abre la imagen o reemplázala desde aquí.</p>
+        </header>
+        <img id="dataLightboxImg" class="data-admin__lightbox-media" alt="Vista previa" />
+        <p id="dataLightboxEmpty" class="muted" hidden>Este registro no tiene imagen. Sube una nueva.</p>
+        <div class="data-admin__lightbox-actions">
+          <button class="button button-muted" type="button" data-close-lightbox>Cerrar</button>
+          <button class="button button-primary" type="button" id="dataLightboxUploadBtn">
+            Cargar nueva imagen
+          </button>
+        </div>
+      </div>
+    </div>
+    <script src="{{ url_for('static', filename='mobile-nav.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='data_admin.js') }}" defer></script>
+  </body>
+</html>

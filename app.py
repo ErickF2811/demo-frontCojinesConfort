@@ -1,4 +1,5 @@
 import base64
+import csv
 import io
 import mimetypes
 import os
@@ -14,7 +15,17 @@ from pathlib import Path
 from typing import Any, Deque, Dict, List
 from uuid import uuid4
 
-from flask import Flask, jsonify, redirect, render_template, request, url_for, g
+from flask import (
+    Flask,
+    Response,
+    abort,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    url_for,
+    g,
+)
 
 from db import get_connection
 from services.catalogs import (
@@ -29,7 +40,94 @@ try:  # Optional dependency for Azure Blob Storage
 except Exception:  # pragma: no cover - azure library might be missing
     BlobServiceClient = None  # type: ignore
 
+from psycopg2 import sql
+
 BASE_DIR = Path(__file__).resolve().parent
+
+MANAGED_TABLES: Dict[str, Dict[str, Any]] = {
+    "tbl_materiales": {
+        "label": "Materiales",
+        "primary_key": "id_material",
+        "columns": [
+            "id_material",
+            "material_name",
+            "color",
+            "tipo",
+            "unidad",
+            "costo_unitario",
+            "proveedor",
+            "observaciones",
+            "categoria",
+            "fecha",
+            "estado",
+            "imagen_name",
+            "imagen_url",
+            "storage_account",
+        ],
+        "display": {
+            "hidden": ["imagen_url", "qdrant", "storage_ultima_copy"],
+            "labels": {"storage_account": "Imagen"},
+            "thumbnail_columns": ["storage_account"],
+            "image_field": "storage_account",
+        },
+    },
+    "tbl_proveedores": {
+        "label": "Proveedores",
+        "primary_key": "id_proveedor",
+        "columns": [
+            "id_proveedor",
+            "nombre_empresa",
+            "contacto",
+            "telefono",
+            "correo",
+            "direccion",
+            "observaciones",
+            "fecha",
+        ],
+    },
+    "tbl_catalogo": {
+        "label": "Catálogos",
+        "primary_key": "catalog_id",
+        "columns": [
+            "catalog_id",
+            "created_at",
+            "catalog_name",
+            "description",
+            "collection",
+            "stack",
+            "url_catalogo",
+            "url_portada",
+            "url_caratula",
+        ],
+        "display": {
+            "labels": {
+                "url_catalogo": "Archivo",
+                "url_portada": "Portada",
+                "url_caratula": "Carátula",
+            },
+            "thumbnail_columns": ["url_catalogo", "url_portada", "url_caratula"],
+        },
+    },
+    "tbl_movimientos": {
+        "label": "Movimientos",
+        "primary_key": "id_movimiento",
+        "columns": [
+            "id_movimiento",
+            "fecha",
+            "tipo",
+            "id_material",
+            "cantidad",
+            "unidad",
+            "motivo",
+            "responsable",
+            "observaciones",
+            "funda",
+        ],
+    },
+}
+
+TABLE_COLUMNS_CACHE: Dict[str, List[str]] = {}
+RAW_TABLE_COLUMNS: Dict[str, List[str]] = {}
 
 
 def _extract_env_value_from_file(path: Path, keys: tuple[str, ...]) -> str:
@@ -66,6 +164,49 @@ def _load_clerk_publishable_key() -> str:
         if value:
             return value
     return ""
+
+
+def get_managed_table_or_404(table_id: str) -> Dict[str, str]:
+    table = MANAGED_TABLES.get(table_id)
+    if not table:
+        abort(404, description="Tabla no permitida para edición.")
+    return table
+
+
+def _fetch_table_columns_from_db(table_id: str) -> List[str]:
+    if table_id in RAW_TABLE_COLUMNS:
+        return RAW_TABLE_COLUMNS[table_id]
+    query = """
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = %s
+        ORDER BY ordinal_position
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(query, (table_id,))
+        columns = [row["column_name"] for row in cur.fetchall()]
+        if not columns:
+            abort(404, description=f"La tabla {table_id} no tiene columnas visibles.")
+        RAW_TABLE_COLUMNS[table_id] = columns
+        return columns
+
+
+def get_table_columns(table_id: str) -> List[str]:
+    if table_id in TABLE_COLUMNS_CACHE:
+        return TABLE_COLUMNS_CACHE[table_id]
+
+    actual = _fetch_table_columns_from_db(table_id)
+    meta = MANAGED_TABLES.get(table_id, {})
+    preferred: List[str] = meta.get("columns") or []
+    ordered = [col for col in preferred if col in actual]
+    remaining = [col for col in actual if col not in ordered]
+    columns = ordered + remaining
+    TABLE_COLUMNS_CACHE[table_id] = columns
+    return columns
+
+
+def table_identifier(table_id: str) -> sql.Identifier:
+    return sql.Identifier("public", table_id)
 
 
 def fetch_material_filters() -> Dict[str, List[str]]:
@@ -487,6 +628,9 @@ AZURE_BLOB_CONNECTION_STRING = os.environ.get(
 )
 AZURE_BLOB_CONTAINER = os.environ.get("AZURE_BLOB_CONTAINER", "blobchat")
 AZURE_BLOB_CATALOG_CONTAINER = os.environ.get("AZURE_BLOB_CATALOG_CONTAINER", "blobcatalogos")
+AZURE_BLOB_IMAGES_CONTAINER = os.environ.get(
+    "AZURE_BLOB_IMAGES_CONTAINER", AZURE_BLOB_CONTAINER
+)
 
 _blob_service_client = None
 _blob_container_clients: Dict[str, Any] = {}
@@ -1076,6 +1220,12 @@ def cotizador_page() -> str:
     return render_template("cotizador.html", chat_webhook_url=get_chat_webhook_url())
 
 
+@app.route("/data")
+def data_admin_page() -> str:
+    """Render the data administration page."""
+    return render_template("data_admin.html", chat_webhook_url=get_chat_webhook_url())
+
+
 @app.route("/api/materiales")
 def api_materiales():
     """Return the materials list coming from the DB view."""
@@ -1137,6 +1287,226 @@ def api_material_movements(material_id: str):
     except Exception as exc:  # pragma: no cover
         return jsonify({"error": str(exc)}), 500
 
+
+@app.route("/api/data/tables")
+def api_data_tables():
+    """Return list of managed tables for the admin page."""
+    data = [
+        {
+            "id": table_id,
+            "label": meta["label"],
+            "primary_key": meta["primary_key"],
+            "display": meta.get("display", {}),
+        }
+        for table_id, meta in MANAGED_TABLES.items()
+    ]
+    return jsonify(data)
+
+
+@app.route("/api/data/<table_id>")
+def api_data_table_rows(table_id: str):
+    """Return paginated rows for a managed table."""
+    meta = get_managed_table_or_404(table_id)
+    page = max(1, request.args.get("page", default=1, type=int))
+    per_page = min(100, max(1, request.args.get("per_page", default=25, type=int)))
+    offset = (page - 1) * per_page
+    columns = get_table_columns(table_id)
+    if meta["primary_key"] not in columns:
+        columns.insert(0, meta["primary_key"])
+    pk = meta["primary_key"]
+
+    with get_connection() as conn, conn.cursor() as cur:
+        count_sql = sql.SQL("SELECT COUNT(*) AS total FROM {table}").format(
+            table=table_identifier(table_id)
+        )
+        cur.execute(count_sql)
+        total = int(cur.fetchone()["total"])
+
+        data_sql = sql.SQL(
+            "SELECT * FROM {table} ORDER BY {pk} LIMIT %s OFFSET %s"
+        ).format(table=table_identifier(table_id), pk=sql.Identifier(pk))
+        cur.execute(data_sql, (per_page, offset))
+        rows = [
+            {key: normalize_value(value) for key, value in row.items()}
+            for row in cur.fetchall()
+        ]
+
+    return jsonify(
+        {
+            "table": table_id,
+            "label": meta["label"],
+            "primary_key": pk,
+            "columns": columns,
+            "rows": rows,
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "display": meta.get("display", {}),
+        }
+    )
+
+
+@app.route("/api/data/<table_id>/<pk_value>", methods=["PATCH"])
+def api_data_update_row(table_id: str, pk_value: str):
+    """Update a single row in an allowed table."""
+    meta = get_managed_table_or_404(table_id)
+    payload = request.get_json(silent=True) or {}
+    changes = payload.get("changes", {})
+    if not isinstance(changes, dict) or not changes:
+        return jsonify({"error": "Envía un objeto 'changes' con los campos a actualizar."}), 400
+
+    columns = get_table_columns(table_id)
+    assignments: List[sql.Composed] = []
+    values: List[Any] = []
+
+    for column, value in changes.items():
+        if column not in columns or column == meta["primary_key"]:
+            continue
+        assignments.append(sql.Composed([sql.Identifier(column), sql.SQL(" = %s")]))
+        values.append(value)
+
+    if not assignments:
+        return jsonify({"error": "No se encontraron campos válidos para actualizar."}), 400
+
+    query = sql.SQL("UPDATE {table} SET {assignments} WHERE {pk} = %s").format(
+        table=table_identifier(table_id),
+        assignments=sql.SQL(", ").join(assignments),
+        pk=sql.Identifier(meta["primary_key"]),
+    )
+    values.append(pk_value)
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(query, values)
+        conn.commit()
+
+    return jsonify({"ok": True})
+
+
+@app.route("/api/data/<table_id>/<pk_value>", methods=["DELETE"])
+def api_data_delete_row(table_id: str, pk_value: str):
+    """Delete a single row from a managed table."""
+    meta = get_managed_table_or_404(table_id)
+    query = sql.SQL("DELETE FROM {table} WHERE {pk} = %s").format(
+        table=table_identifier(table_id),
+        pk=sql.Identifier(meta["primary_key"]),
+    )
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(query, (pk_value,))
+        conn.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/data/<table_id>/export")
+def api_data_export(table_id: str):
+    """Export table rows as CSV."""
+    meta = get_managed_table_or_404(table_id)
+    columns = get_table_columns(table_id)
+    if meta["primary_key"] not in columns:
+        columns.insert(0, meta["primary_key"])
+
+    with get_connection() as conn, conn.cursor() as cur:
+        data_sql = sql.SQL("SELECT * FROM {table} ORDER BY {pk}").format(
+            table=table_identifier(table_id),
+            pk=sql.Identifier(meta["primary_key"]),
+        )
+        cur.execute(data_sql)
+        rows = cur.fetchall()
+
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=columns)
+    writer.writeheader()
+    for row in rows:
+        sanitized = {key: "" if value is None else value for key, value in row.items()}
+        writer.writerow(sanitized)
+
+    output.seek(0)
+    response = Response(output.getvalue(), mimetype="text/csv")
+    response.headers["Content-Disposition"] = f'attachment; filename="{table_id}.csv"'
+    return response
+
+
+@app.route("/api/data/<table_id>/import", methods=["POST"])
+def api_data_import(table_id: str):
+    """Import CSV rows into a managed table."""
+    meta = get_managed_table_or_404(table_id)
+    file = request.files.get("file")
+    if not file or not file.filename:
+        return jsonify({"error": "Selecciona un archivo CSV."}), 400
+
+    try:
+        text = file.stream.read().decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return jsonify({"error": "El archivo debe estar codificado en UTF-8."}), 400
+
+    reader = csv.DictReader(io.StringIO(text))
+    columns = get_table_columns(table_id)
+    if meta["primary_key"] not in columns:
+        columns.insert(0, meta["primary_key"])
+
+    if not reader.fieldnames:
+        return jsonify({"error": "El CSV debe contener encabezados."}), 400
+
+    inserted = 0
+    with get_connection() as conn, conn.cursor() as cur:
+        try:
+            for row in reader:
+                payload = {key: value for key, value in row.items() if key in columns and value != ""}
+                if not payload:
+                    continue
+                cols_sql = sql.SQL(", ").join(sql.Identifier(col) for col in payload.keys())
+                vals_sql = sql.SQL(", ").join(sql.Placeholder() for _ in payload)
+                query = sql.SQL("INSERT INTO {table} ({cols}) VALUES ({vals})").format(
+                    table=table_identifier(table_id),
+                    cols=cols_sql,
+                    vals=vals_sql,
+                )
+                cur.execute(query, list(payload.values()))
+                inserted += 1
+            conn.commit()
+        except Exception as exc:
+            conn.rollback()
+            return jsonify({"error": f"No se pudo importar el archivo: {exc}"}), 400
+
+    return jsonify({"inserted": inserted})
+
+
+@app.route("/api/data/<table_id>/<pk_value>/image", methods=["POST"])
+def api_data_upload_image(table_id: str, pk_value: str):
+    """Upload a new image to blob storage and update the configured image field."""
+    meta = get_managed_table_or_404(table_id)
+    display_meta: Dict[str, Any] = meta.get("display") or {}
+    image_field = display_meta.get("image_field")
+    if not image_field:
+        return jsonify({"error": "Esta tabla no admite actualización de imagen."}), 400
+
+    file = request.files.get("file")
+    if not file or not file.filename:
+        return jsonify({"error": "Selecciona un archivo de imagen."}), 400
+
+    try:
+        url = upload_blob_stream(
+            file.stream,
+            filename=file.filename,
+            content_type=file.mimetype or file.content_type or "application/octet-stream",
+            container_name=AZURE_BLOB_IMAGES_CONTAINER,
+            prefix=f"data/{table_id}",
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # pragma: no cover
+        logger.exception("data.image upload failed table=%s pk=%s", table_id, pk_value)
+        return jsonify({"error": "No se pudo subir la imagen al blob storage."}), 500
+
+    query = sql.SQL("UPDATE {table} SET {col} = %s WHERE {pk} = %s").format(
+        table=table_identifier(table_id),
+        col=sql.Identifier(image_field),
+        pk=sql.Identifier(meta["primary_key"]),
+    )
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(query, (url, pk_value))
+        conn.commit()
+
+    return jsonify({"url": url})
 
 @app.route("/api/catalogs", methods=["GET", "POST"])
 def api_catalogs():

@@ -4,6 +4,20 @@ Aplicación web sencilla construida con Flask para consultar el inventario de ma
 en una base de datos PostgreSQL. El backend expone endpoints que unifican la información
 de materiales con proveedores y calculan el stock agrupado por tipo de movimiento.
 
+## Panel de datos editable
+
+Se aadi la vista **Data** (`/data`) para administrar registros de tablas base (materiales,
+proveedores y catlogos) sin salir del dashboard.
+
+- Edita o elimina **un registro a la vez** mediante el formulario modal.
+- Exporta todo el contenido de la tabla a CSV con un clic.
+- Importa nuevos registros cargando un CSV con encabezados compatibles; cada fila se inserta
+  como un registro independiente.
+- En Materiales, la columna *Imagen* muestra una miniatura. Si haces clic en ella puedes subir
+  un nuevo archivo y se enviará al contenedor configurado en AZURE_BLOB_CONTAINER/AZURE_BLOB_IMAGES_CONTAINER.
+
+> Si necesitas habilitar otra tabla, agrgala al diccionario `MANAGED_TABLES` en `app.py`
+> indicando su nombre y llave primaria.
 ## Requisitos
 
 - Python 3.11+
@@ -324,3 +338,4 @@ Notas
 - Para evitar errores `InvalidMetadata` en Azure, los blobs se suben sin metadatos personalizados.
 - El frontend usa checkboxes para permitir múltiples destacados.
 - La API incluye `cover_url` (alias de `url_portada`) y `url` (alias de `url_catalogo`).
+

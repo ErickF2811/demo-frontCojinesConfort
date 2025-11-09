@@ -8,14 +8,17 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
   </head>
   <body>
-    <div class="layout">
+    {% set active_tab = "materiales" %}
+    <div class="layout layout--sticky-nav">
       <nav class="sidebar">
         <h2 class="sidebar__title">Panel</h2>
         <a class="sidebar__link is-active" href="{{ url_for('materiales_page') }}">Listado</a>
         <a class="sidebar__link" href="{{ url_for('catalogos_page') }}">Catálogos</a>
         <a class="sidebar__link" href="{{ url_for('cotizador_page') }}">Cotización</a>
+        <a class="sidebar__link" href="{{ url_for('data_admin_page') }}">Data</a>
       </nav>
       <div class="layout__content">
+        {% include "partials/mobile_nav.html" %}
         <section class="tab-panel tab-panel--active">
     <header class="page-header">
       <div>
@@ -259,6 +262,7 @@
       window.CHAT_WEBHOOK_URL = {{ chat_webhook_url|tojson }};
     </script>
     <script src="{{ url_for('static', filename='chat.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='mobile-nav.js') }}" defer></script>
     <script src="{{ url_for('static', filename='materiales.js') }}" defer></script>
 
     <button id="chatFab" class="chat-fab" type="button" aria-label="Abrir chat de soporte">💬</button>

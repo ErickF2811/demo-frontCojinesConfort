@@ -1,0 +1,50 @@
+{% set nav_items = [
+  {"slug": "materiales", "label": "Listado", "href": url_for("materiales_page")},
+  {"slug": "catalogos", "label": "Catálogos", "href": url_for("catalogos_page")},
+  {"slug": "cotizador", "label": "Cotización", "href": url_for("cotizador_page")},
+  {"slug": "data", "label": "Data", "href": url_for("data_admin_page")},
+] %}
+{% set active_slug = active_tab or "" %}
+
+<div class="mobile-nav" data-active="{{ active_slug }}">
+  <div class="mobile-nav__bar">
+    <button
+      class="mobile-nav__hamburger"
+      type="button"
+      aria-label="Abrir menú"
+      aria-expanded="false"
+    >
+      <span></span>
+      <span></span>
+      <span></span>
+    </button>
+    <p class="mobile-nav__label">Panel</p>
+    <div class="mobile-nav__user" id="mobileUserWrapper">
+      <div id="clerk-user-button-anchor" class="auth-user-button" hidden>
+        <span id="auth-role-pill" class="role-pill" hidden></span>
+        <div id="clerk-user-button-slot"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mobile-nav__backdrop" aria-hidden="true"></div>
+
+  <nav class="mobile-nav__drawer" aria-label="Navegación principal" aria-hidden="true">
+    <header class="mobile-nav__drawer-header">
+      <p class="eyebrow">Navegación</p>
+      <strong>Panel principal</strong>
+    </header>
+    <ul class="mobile-nav__list">
+      {% for item in nav_items %}
+        <li>
+          <a
+            class="mobile-nav__drawer-link{% if item.slug == active_slug %} is-active{% endif %}"
+            href="{{ item.href }}"
+          >
+            {{ item.label }}
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
+  </nav>
+</div>
