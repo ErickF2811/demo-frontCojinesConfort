@@ -1,5 +1,21 @@
 # syntax=docker/dockerfile:1.7
 
+###############################
+# Frontend (Vite) build stage #
+###############################
+FROM node:20-bullseye-slim AS frontend-build
+
+WORKDIR /frontend
+
+COPY clerk-javascript/package*.json ./
+RUN npm ci
+
+COPY clerk-javascript/ ./
+RUN npm run build
+
+#############################
+# Backend (Flask) final img #
+#############################
 FROM python:3.11-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -9,27 +25,27 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# System deps (just in case locales/SSL are needed)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better layer caching
+# Copy requirements first for caching
 COPY requirements.txt ./
 
 RUN pip install --upgrade pip \
     && pip install -r requirements.txt
 
-# Copy the rest of the source
+# Copy application source
 COPY . .
 
-# Default envs (can be overridden at runtime)
+# Replace the Vite output with the freshly built assets
+COPY --from=frontend-build /frontend/dist ./clerk-javascript/dist
+
+# Default envs (override at runtime)
 ENV PORT=5000 \
-    FLASK_ENV=production 
-    # DATABASE_URL="postgresql://admin:admin123@172.21.0.8:5432/cojines"
+    FLASK_ENV=production
 
 EXPOSE 5000
 
-# Use gunicorn in production; fall back to Flask dev server if not available
+# Use gunicorn if installed, otherwise fall back to Flask's dev server
 CMD ["sh", "-lc", "python -c 'import importlib.util; exit(0 if importlib.util.find_spec(\"gunicorn\") else 1)' && exec gunicorn -b 0.0.0.0:$PORT app:app || exec python app.py"]
-

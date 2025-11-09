@@ -1,0 +1,24 @@
+.venv
+__pycache__/
+*.py[cod]
+*.swp
+.DS_Store
+.git
+.gitignore
+.mypy_cache/
+.pytest_cache/
+
+# Node artifacts
+node_modules/
+clerk-javascript/node_modules/
+clerk-javascript/dist/
+
+# Build outputs
+dist/
+build/
+
+# Local env/config overrides
+.env.local
+.env.development
+.env.test
+.tmp/

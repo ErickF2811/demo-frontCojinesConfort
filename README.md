@@ -41,12 +41,14 @@ $env:DATABASE_URL= "postgresql://admin:admin@postgre_dev/cojines"
 
 ### Variables de entorno adicionales
 
-La aplicación consume otras variables para el chat y Azure Blob Storage:
+Además de `DATABASE_URL`, la aplicación requiere las siguientes variables para que todos los módulos (chat, subida de archivos y autenticación con Clerk) funcionen correctamente:
 
 - `CHAT_WEBHOOK_URL`: URL del webhook que recibe los mensajes del widget de chat. Si no se define, se usa el endpoint de pruebas configurado en el código.
 - `AZURE_BLOB_CONNECTION_STRING`: cadena de conexión del Storage Account donde se guardan los adjuntos enviados desde el chat.
 - `AZURE_BLOB_CONTAINER`: contenedor destino en Azure Blob (por defecto `blobchat`).
+- `AZURE_BLOB_IMAGES_CONTAINER`: contenedor usado para las miniaturas de Materiales (si no se define, reutiliza `AZURE_BLOB_CONTAINER`).
 - `AZURE_BLOB_CATALOG_CONTAINER`: contenedor donde se almacenan los catálogos PDF (por defecto `blobcatalogos`).
+- `CLERK_PUBLISHABLE_KEY` **o** `VITE_CLERK_PUBLISHABLE_KEY`: clave pública de tu instancia de Clerk. El backend la buscará primero en estas variables y, si no existen, en los archivos `.env` (raíz y `clerk-javascript/.env`). Sin esta clave el login no podrá renderizarse.
 
 Ejemplo (PowerShell):
 
@@ -54,7 +56,9 @@ Ejemplo (PowerShell):
 $env:CHAT_WEBHOOK_URL = "https://tu-servidor/webhook"
 $env:AZURE_BLOB_CONNECTION_STRING = "DefaultEndpointsProtocol=...;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net"
 $env:AZURE_BLOB_CONTAINER = "blobchat"
+$env:AZURE_BLOB_IMAGES_CONTAINER = "blobimages"
 $env:AZURE_BLOB_CATALOG_CONTAINER = "blobcatalogos"
+$env:CLERK_PUBLISHABLE_KEY = "pk_live_..."
 ```
 
 En Bash:
@@ -63,7 +67,9 @@ En Bash:
 export CHAT_WEBHOOK_URL="https://tu-servidor/webhook"
 export AZURE_BLOB_CONNECTION_STRING="DefaultEndpointsProtocol=...;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net"
 export AZURE_BLOB_CONTAINER="blobchat"
+export AZURE_BLOB_IMAGES_CONTAINER="blobimages"
 export AZURE_BLOB_CATALOG_CONTAINER="blobcatalogos"
+export VITE_CLERK_PUBLISHABLE_KEY="pk_live_..."
 ```
 
 ## Ejecutar el servidor
@@ -271,12 +277,38 @@ Notas de compatibilidad
 
 ```powershell
 $IMAGE_NAME = "cojines-app"
-$VERSION = "v7.0"
+$VERSION = "v8.0"
 $REGISTRY_USER = "erifcamp"
 docker build -t ${IMAGE_NAME}:${VERSION} .
 docker tag ${IMAGE_NAME}:${VERSION} ${REGISTRY_USER}/${IMAGE_NAME}:${VERSION}
 docker push ${REGISTRY_USER}/${IMAGE_NAME}:${VERSION}
 ```
+
+### ¿Y luego?
+
+1. Crea un archivo `.env.prod` (o el nombre que prefieras) con todas las variables reales del entorno:
+   ```env
+   DATABASE_URL=postgresql://usuario:clave@host:5432/cojines
+   CHAT_WEBHOOK_URL=https://tu-servidor/webhook
+   AZURE_BLOB_CONNECTION_STRING=DefaultEndpointsProtocol=...
+   AZURE_BLOB_CONTAINER=blobchat
+   AZURE_BLOB_IMAGES_CONTAINER=blobimagenes
+   AZURE_BLOB_CATALOG_CONTAINER=blobcatalogos
+   CLERK_PUBLISHABLE_KEY=pk_live_xxxxxx   # la misma clave que usarás en Clerk
+   PORT=5000
+   ```
+2. Consume ese archivo desde tu `docker-compose.yml` o desde el orquestador que uses. Ejemplo mínimo para producción:
+   ```yaml
+   services:
+     inv_cojines:
+       image: erifcamp/cojines-app:v8.0      # la imagen que subiste a tu registry
+       env_file:
+         - .env.prod
+       ports:
+         - "5000:5000"
+   ```
+   > Si prefieres no usar `env_file`, declara las mismas variables directamente en la sección `environment:`.
+3. Clerk solo necesita la clave pública en el backend (`CLERK_PUBLISHABLE_KEY` o `VITE_CLERK_PUBLISHABLE_KEY`). Las claves secretas se administran desde el panel de Clerk, no se guardan en esta app. Si corres el frontend Vite por separado, crea un `.env.production` dentro de `clerk-javascript/` con `VITE_CLERK_PUBLISHABLE_KEY` y vuelve a ejecutar `npm run build` antes de generar la imagen.
 
 ## Panel de Catálogos (PDF)
 
