@@ -8,24 +8,21 @@ const prevPageBtn = document.getElementById("prevPage");
 const nextPageBtn = document.getElementById("nextPage");
 const pageInput = document.getElementById("pageInput");
 const totalPagesEl = document.getElementById("totalPages");
-const tableCard = document.querySelector('.table-card');
-const mobileMediaQuery = window.matchMedia('(max-width: 640px)');
-const tabButtons = document.querySelectorAll("[data-tab-target]");
-const tabPanels = document.querySelectorAll("[data-tab-panel]");
-const catalogUploadForm = document.getElementById("catalogUploadForm");
-const catalogFileInput = document.getElementById("catalogFile");
-const catalogFileLabel = document.getElementById("catalogFileLabel");
-const catalogStatus = document.getElementById("catalogStatus");
-const catalogListEl = document.getElementById("catalogList");
-const catalogRefreshBtn = document.getElementById("catalogRefresh");
-const catalogClearBtn = document.getElementById("catalogClear");
-const catalogNameInput = document.getElementById("catalogName");
-const catalogDescriptionInput = document.getElementById("catalogDescription");
-const catalogCollectionInput = document.getElementById("catalogCollection");
-const catalogStackInput = document.getElementById("catalogStack");
-const catalogCoverInput = document.getElementById("catalogCover");
-const catalogCoverLabel = document.getElementById("catalogCoverLabel");
+const tableCard = document.querySelector(".table-card");
+const mobileMediaQuery = window.matchMedia("(max-width: 640px)");
+const quoteButton = document.getElementById("quoteButton");
+const quoteStatus = document.getElementById("quoteStatus");
+const QUOTE_STORAGE_KEY = "cc_quote_items";
+let currentQuoteCandidate = null;
 
+function resolveMaterialImage(id) {
+  try {
+    const entry = window.__materialsById?.get(id);
+    return entry?.image_url || entry?.storage_account || "";
+  } catch {
+    return "";
+  }
+}
 
 function syncMobileLayoutClass() {
   if (!tableCard) return;
@@ -127,6 +124,167 @@ function updateDropdownLabel(key) {
   }
 }
 
+function loadQuoteItems() {
+  try {
+    const raw = localStorage.getItem(QUOTE_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveQuoteItems(items) {
+  localStorage.setItem(QUOTE_STORAGE_KEY, JSON.stringify(items));
+}
+
+function enqueueQuoteItem(item) {
+  const list = loadQuoteItems();
+  const image = item.image || resolveMaterialImage(item.id);
+  const index = list.findIndex((entry) => entry.id === item.id);
+  if (index >= 0) {
+    const preserved = list[index].added || Date.now();
+    list[index] = { ...list[index], ...item, image: image || list[index].image, qty: normalizeQty(item.qty), added: preserved };
+    saveQuoteItems(list);
+    return { added: false, total: list.length };
+  }
+  list.push({ ...item, image, qty: normalizeQty(item.qty), added: Date.now() });
+  saveQuoteItems(list);
+  return { added: true, total: list.length };
+}
+
+function setQuoteCandidate(payload) {
+  currentQuoteCandidate = { ...payload, image: payload.image || resolveMaterialImage(payload.id) };
+  if (quoteButton) {
+    quoteButton.disabled = !payload;
+  }
+  if (quoteStatus) {
+    quoteStatus.textContent = "";
+  }
+}
+
+function normalizeQty(value) {
+  const qty = Number(value);
+  return Number.isFinite(qty) && qty > 0 ? qty : 1;
+}
+
+quoteButton?.addEventListener("click", () => {
+  if (!currentQuoteCandidate) return;
+  const result = enqueueQuoteItem(currentQuoteCandidate);
+  if (quoteStatus) {
+    quoteStatus.textContent = result.added
+      ? "Material enviado a cotización."
+      : "Este material ya está en la lista de cotización.";
+  }
+});
+
+filtersForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  currentPage = 1;
+  fetchMaterials();
+});
+
+refreshButton?.addEventListener("click", () => {
+  fetchFilters().then(fetchMaterials);
+});
+
+resetButton?.addEventListener("click", () => {
+  Object.entries(filtersConfig).forEach(([key, conf]) => {
+    if (!conf?.options) return;
+    conf.options.querySelectorAll('input[type="checkbox"]').forEach(i => (i.checked = false));
+    updateDropdownLabel(key);
+  });
+  currentPage = 1;
+  fetchMaterials();
+});
+
+window.addEventListener("DOMContentLoaded", () => {
+  syncMobileLayoutClass();
+  mobileMediaQuery.addEventListener("change", syncMobileLayoutClass);
+  fetchFilters().then(fetchMaterials);
+
+  tableBody?.addEventListener("click", (e) => {
+    const thumbBtn = e.target.closest(".thumb-btn");
+    if (thumbBtn && thumbBtn.dataset.id) {
+      const id = thumbBtn.dataset.id;
+      const base = (window.__materialsById && window.__materialsById.get(id)) || {};
+      openDetail(id, base);
+      return;
+    }
+    const tr = e.target.closest("tr");
+    if (!tr || !tr.dataset.idMaterial) return;
+    const id = tr.dataset.idMaterial;
+    const base = (window.__materialsById && window.__materialsById.get(id)) || {};
+    openDetail(id, base);
+  });
+
+  perPageSelect?.addEventListener("change", () => {
+    perPage = Number(perPageSelect.value || 5) || 5;
+    currentPage = 1;
+    fetchMaterials();
+  });
+  prevPageBtn?.addEventListener("click", () => {
+    if (currentPage > 1) {
+      currentPage -= 1;
+      fetchMaterials();
+    }
+  });
+  nextPageBtn?.addEventListener("click", () => {
+    const totalPages = Math.max(1, Math.ceil(totalItems / perPage));
+    if (currentPage < totalPages) {
+      currentPage += 1;
+      fetchMaterials();
+    }
+  });
+  pageInput?.addEventListener("change", () => {
+    const totalPages = Math.max(1, Math.ceil(totalItems / perPage));
+    let p = Number(pageInput.value || 1) || 1;
+    p = Math.max(1, Math.min(totalPages, p));
+    currentPage = p;
+    fetchMaterials();
+  });
+
+  attUploadBtn?.addEventListener("click", () => attFile?.click());
+  attFile?.addEventListener("change", async () => {
+    try {
+      if (!attFile.files || !attFile.files.length) return;
+      const file = attFile.files[0];
+      const dataUrl = await readFileAsDataURL(file);
+      const currentId = (detailTitle?.textContent || "").split("�").pop()?.trim() || "";
+      const idAttr = window.__lastMaterialId || "";
+      const id = currentId || idAttr;
+      if (!id) return;
+      await fetch(`/api/materiales/${encodeURIComponent(id)}/attachments/upload`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: file.name, contentType: file.type, data: dataUrl }),
+      });
+      await loadAttachments(id);
+    } finally {
+      attFile.value = "";
+    }
+  });
+  attList?.addEventListener("click", (e) => {
+    const btn = e.target.closest(".btn-view");
+    if (!btn) return;
+    const url = btn.getAttribute("data-url");
+    const kind = btn.getAttribute("data-kind");
+    const name = btn.getAttribute("data-name") || "archivo";
+    if (!url || !attViewer) return;
+    if (kind === "image") {
+      attViewer.innerHTML = `<img src="${url}" alt="${name}" style="max-width:100%; height:auto; border-radius:8px;"/>`;
+    } else if (kind === "video") {
+      attViewer.innerHTML = `<video src="${url}" controls style="width:100%; max-height:320px; border-radius:8px;"></video>`;
+    } else if (kind === "pdf") {
+      attViewer.innerHTML = `<p class="muted">El PDF no se previsualiza aqu�. <a href="${url}" target="_blank" rel="noopener">Abrir en nueva pesta�a</a>.</p>`;
+    } else {
+      attViewer.innerHTML = `<p class="muted">Tipo no soportado. <a href="${url}" target="_blank" rel="noopener">Descargar</a></p>`;
+    }
+    attViewer.hidden = false;
+  });
+});
+
 function buildQueryParams() {
   const params = new URLSearchParams();
   Object.keys(filtersConfig).forEach((key) => {
@@ -213,440 +371,6 @@ async function fetchMaterials() {
   }
 }
 
-let catalogsLoaded = false;
-
-function setActiveTab(target) {
-  tabButtons.forEach((btn) => {
-    const isActive = btn.dataset.tabTarget === target;
-    btn.classList.toggle("is-active", isActive);
-  });
-  tabPanels.forEach((panel) => {
-    const match = panel.dataset.tabPanel === target;
-    panel.classList.toggle("tab-panel--active", match);
-    if (match) {
-      panel.removeAttribute("hidden");
-    } else {
-      panel.setAttribute("hidden", "true");
-    }
-  });
-  if (target === "catalogs" && !catalogsLoaded) {
-    fetchCatalogs();
-  }
-}
-
-function formatBytes(bytes) {
-  if (bytes === null || bytes === undefined) return "";
-  if (bytes === 0) return "0 KB";
-  const units = ["bytes", "KB", "MB", "GB"];
-  let value = bytes;
-  let index = 0;
-  while (value >= 1024 && index < units.length - 1) {
-    value /= 1024;
-    index += 1;
-  }
-  return index === 0 ? `${value} ${units[index]}` : `${value.toFixed(1)} ${units[index]}`;
-}
-
-function formatDate(value) {
-  if (!value) return "";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "" : date.toLocaleString("es-ES");
-}
-
-async function fetchCatalogs() {
-  if (!catalogListEl) return;
-  catalogListEl.innerHTML = '<p class="empty">Cargando catálogos…</p>';
-  try {
-    const response = await fetch("/api/catalogs");
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || "No se pudo obtener la lista de catálogos.");
-    const catalogs = Array.isArray(data.catalogs) ? data.catalogs : [];
-    if (!catalogs.length) {
-      catalogListEl.innerHTML = '<p class="empty">No hay catálogos disponibles.</p>';
-      if (catalogStatus && catalogStatus.dataset.state === "error") {
-        catalogStatus.textContent = "";
-        catalogStatus.style.color = "#475569";
-        delete catalogStatus.dataset.state;
-      }
-      catalogsLoaded = true;
-      return;
-    }
-    const fragment = document.createDocumentFragment();
-    catalogs.forEach((item) => {
-      const card = document.createElement("article");
-      card.className = "catalog-item";
-
-      const info = document.createElement("div");
-      info.className = "catalog-item__info";
-
-      const title = document.createElement("span");
-      title.className = "catalog-item__title";
-      title.textContent = item.catalog_name || item.display_name || item.name;
-      if (item.stack) {
-        const badge = document.createElement("span");
-        badge.className = "catalog-item__badge";
-        badge.textContent = "Destacado";
-        title.appendChild(document.createTextNode(" "));
-        title.appendChild(badge);
-      }
-
-      const meta = document.createElement("span");
-      meta.className = "catalog-item__meta";
-      const metaParts = [];
-      const sizeTxt = item.size != null ? formatBytes(item.size) : "";
-      const dateTxt = formatDate(item.created_at || item.last_modified);
-      if (item.collection) metaParts.push(`Colección: ${item.collection}`);
-      if (sizeTxt) metaParts.push(sizeTxt);
-      if (dateTxt) metaParts.push(dateTxt);
-      meta.textContent = metaParts.join(" · ") || "";
-
-      info.appendChild(title);
-      info.appendChild(meta);
-
-      if (item.description) {
-        const desc = document.createElement("p");
-        desc.className = "catalog-item__desc";
-        desc.textContent = item.description;
-        info.appendChild(desc);
-      }
-
-      const actions = document.createElement("div");
-      actions.className = "catalog-item__actions";
-
-      const link = document.createElement("a");
-      link.className = "catalog-item__link";
-      link.href = item.url;
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-      link.textContent = "Ver PDF";
-
-      const stackLabel = document.createElement("label");
-      stackLabel.className = "catalog-item__stack";
-      stackLabel.innerHTML = `<input type="checkbox" class="catalog-stack" data-id="${item.catalog_id}" ${item.stack ? "checked" : ""}> Destacar`;
-
-      actions.appendChild(link);
-      actions.appendChild(stackLabel);
-
-      card.appendChild(info);
-      card.appendChild(actions);
-      fragment.appendChild(card);
-    });
-    catalogListEl.innerHTML = "";
-    catalogListEl.appendChild(fragment);
-    catalogsLoaded = true;
-    if (catalogStatus && catalogStatus.dataset.state === "error") {
-      catalogStatus.textContent = "";
-      catalogStatus.style.color = "#475569";
-      delete catalogStatus.dataset.state;
-    }
-  } catch (error) {
-    console.error("Catálogos", error);
-    catalogListEl.innerHTML = '<p class="empty">No se pudieron cargar los catálogos.</p>';
-    catalogsLoaded = false;
-    if (catalogStatus) {
-      catalogStatus.textContent = error.message || "No se pudieron cargar los catálogos.";
-      catalogStatus.style.color = "#b91c1c";
-      catalogStatus.dataset.state = "error";
-    }
-  }
-}
-
-async function handleCatalogUpload(event) {
-  event.preventDefault();
-  const name = catalogNameInput?.value.trim() || "";
-  const description = catalogDescriptionInput?.value.trim() || "";
-  const collection = catalogCollectionInput?.value.trim() || "";
-  const stackSelected = !!catalogStackInput?.checked;
-
-  if (!name) {
-    if (catalogStatus) {
-      catalogStatus.textContent = "Ingresa un nombre para el catálogo.";
-      catalogStatus.style.color = "#b91c1c";
-      catalogStatus.dataset.state = "error";
-    }
-    return;
-  }
-  if (!description) {
-    if (catalogStatus) {
-      catalogStatus.textContent = "Ingresa una descripción para el catálogo.";
-      catalogStatus.style.color = "#b91c1c";
-      catalogStatus.dataset.state = "error";
-    }
-    return;
-  }
-  if (!catalogFileInput || !catalogFileInput.files?.length) {
-    if (catalogStatus) {
-      catalogStatus.textContent = "Selecciona un archivo PDF.";
-      catalogStatus.style.color = "#b91c1c";
-      catalogStatus.dataset.state = "error";
-    }
-    return;
-  }
-  const file = catalogFileInput.files[0];
-  if (file.type && !file.type.toLowerCase().includes("pdf")) {
-    if (catalogStatus) {
-      catalogStatus.textContent = "Solo se permiten archivos PDF.";
-      catalogStatus.style.color = "#b91c1c";
-      catalogStatus.dataset.state = "error";
-    }
-    return;
-  }
-  const formData = new FormData();
-  formData.append("catalog_name", name);
-  formData.append("description", description);
-  formData.append("collection", collection);
-  formData.append("stack", stackSelected ? "1" : "0");
-  formData.append("file", file);
-  if (catalogCoverInput && catalogCoverInput.files && catalogCoverInput.files.length) {
-    const cover = catalogCoverInput.files[0];
-    if (cover && (!cover.type || cover.type.toLowerCase().startsWith("image/"))) {
-      formData.append("cover", cover);
-    }
-  }
-  if (catalogStatus) {
-    catalogStatus.textContent = "Subiendo catálogo…";
-    catalogStatus.style.color = "#475569";
-    catalogStatus.dataset.state = "info";
-  }
-  try {
-    const response = await fetch("/api/catalogs", {
-      method: "POST",
-      body: formData,
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || "No se pudo subir el catálogo.");
-    if (catalogStatus) {
-      catalogStatus.textContent = data.message || "Catálogo subido correctamente.";
-      catalogStatus.style.color = "#16a34a";
-      catalogStatus.dataset.state = "success";
-    }
-    if (catalogNameInput) catalogNameInput.value = "";
-    if (catalogDescriptionInput) catalogDescriptionInput.value = "";
-    if (catalogCollectionInput) catalogCollectionInput.value = "";
-    if (catalogStackInput) catalogStackInput.checked = false;
-    catalogFileInput.value = "";
-    if (catalogFileLabel) catalogFileLabel.textContent = "Selecciona un archivo PDF…";
-    await fetchCatalogs();
-  } catch (error) {
-    console.error("Upload catálogo", error);
-    if (catalogStatus) {
-      catalogStatus.textContent = error.message || "No se pudo subir el catálogo.";
-      catalogStatus.style.color = "#b91c1c";
-      catalogStatus.dataset.state = "error";
-    }
-  }
-}
-
-filtersForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  fetchMaterials();
-});
-
-refreshButton.addEventListener("click", () => {
-  fetchFilters().then(fetchMaterials);
-});
-
-resetButton.addEventListener("click", () => {
-  // Limpiar checkboxes de todos los dropdowns y actualizar etiqueta
-  Object.entries(filtersConfig).forEach(([key, conf]) => {
-    if (!conf?.options) return;
-    conf.options.querySelectorAll('input[type="checkbox"]').forEach(i => i.checked = false);
-    updateDropdownLabel(key);
-  });
-  fetchMaterials();
-});
-
-  window.addEventListener("DOMContentLoaded", () => {
-  syncMobileLayoutClass();
-  mobileMediaQuery.addEventListener('change', syncMobileLayoutClass);
-  fetchFilters().then(fetchMaterials);
-  // Event delegation to ensure clicks on image/text trigger the same
-  tableBody.addEventListener("click", (e) => {
-    const thumbBtn = e.target.closest('.thumb-btn');
-    if (thumbBtn && thumbBtn.dataset.id) {
-      const id = thumbBtn.dataset.id;
-      const base = (window.__materialsById && window.__materialsById.get(id)) || {};
-      openDetail(id, base);
-      return;
-    }
-    const tr = e.target.closest("tr");
-    if (!tr || !tr.dataset.idMaterial) return;
-    const id = tr.dataset.idMaterial;
-    const base = (window.__materialsById && window.__materialsById.get(id)) || {};
-    openDetail(id, base);
-  });
-  // Pager handlers
-  perPageSelect?.addEventListener('change', () => {
-    perPage = Number(perPageSelect.value || 5) || 5;
-    currentPage = 1;
-    fetchMaterials();
-  });
-  prevPageBtn?.addEventListener('click', () => {
-    if (currentPage > 1) { currentPage -= 1; fetchMaterials(); }
-  });
-    nextPageBtn?.addEventListener('click', () => {
-    const totalPages = Math.max(1, Math.ceil(totalItems / perPage));
-    if (currentPage < totalPages) { currentPage += 1; fetchMaterials(); }
-  });
-    pageInput?.addEventListener('change', () => {
-    const totalPages = Math.max(1, Math.ceil(totalItems / perPage));
-    let p = Number(pageInput.value || 1) || 1;
-    p = Math.max(1, Math.min(totalPages, p));
-    currentPage = p;
-    fetchMaterials();
-    });
-
-    // Attachments interactions
-    attUploadBtn?.addEventListener('click', () => attFile?.click());
-    attFile?.addEventListener('change', async () => {
-      try {
-        if (!attFile.files || !attFile.files.length) return;
-        const file = attFile.files[0];
-        const dataUrl = await readFileAsDataURL(file);
-        const currentId = (detailTitle?.textContent || '').split('·').pop()?.trim() || '';
-        // If we cannot infer from title, try from last opened map
-        const idAttr = window.__lastMaterialId || '';
-        const id = currentId || idAttr;
-        if (!id) return;
-        await fetch(`/api/materiales/${encodeURIComponent(id)}/attachments/upload`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: file.name, contentType: file.type, data: dataUrl }),
-        });
-        await loadAttachments(id);
-      } finally {
-        attFile.value = '';
-      }
-    });
-    attList?.addEventListener('click', (e) => {
-      const btn = e.target.closest('.btn-view');
-      if (!btn) return;
-      const url = btn.getAttribute('data-url');
-      const kind = btn.getAttribute('data-kind');
-      const name = btn.getAttribute('data-name') || 'archivo';
-      if (!url || !attViewer) return;
-      if (kind === 'image') {
-        attViewer.innerHTML = `<img src="${url}" alt="${name}" style="max-width:100%; height:auto; border-radius:8px;"/>`;
-      } else if (kind === 'video') {
-        attViewer.innerHTML = `<video src="${url}" controls style="width:100%; max-height:320px; border-radius:8px;"></video>`;
-      } else if (kind === 'pdf') {
-        attViewer.innerHTML = `<p class="muted">El PDF no se previsualiza aquí. <a href="${url}" target="_blank" rel="noopener">Abrir en nueva pestaña</a>.</p>`;
-      } else {
-        attViewer.innerHTML = `<p class="muted">Tipo no soportado. <a href="${url}" target="_blank" rel="noopener">Descargar</a></p>`;
-      }
-      attViewer.hidden = false;
-    });
-  
-  tabButtons.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const target = btn.dataset.tabTarget || 'list';
-      setActiveTab(target);
-    });
-  });
-
-  catalogUploadForm?.addEventListener('submit', handleCatalogUpload);
-  catalogFileInput?.addEventListener('change', () => {
-    if (!catalogFileInput.files || !catalogFileInput.files.length) {
-      if (catalogFileLabel) catalogFileLabel.textContent = "Selecciona un archivo PDF…";
-      if (catalogStatus) {
-        catalogStatus.textContent = "";
-        catalogStatus.style.color = "#475569";
-      }
-      return;
-    }
-    const file = catalogFileInput.files[0];
-    if (catalogFileLabel) catalogFileLabel.textContent = file.name;
-    if (catalogStatus) {
-      catalogStatus.textContent = "";
-      catalogStatus.style.color = "#475569";
-    }
-  });
-  
-  catalogCoverInput?.addEventListener('change', () => {
-    if (!catalogCoverInput.files || !catalogCoverInput.files.length) {
-      if (catalogCoverLabel) catalogCoverLabel.textContent = "Adjunta una portada (opcional)…";
-      return;
-    }
-    const file = catalogCoverInput.files[0];
-    if (catalogCoverLabel) catalogCoverLabel.textContent = file.name;
-  });
-
-  catalogRefreshBtn?.addEventListener('click', () => {
-    catalogsLoaded = false;
-    fetchCatalogs();
-  });
-
-  catalogClearBtn?.addEventListener('click', () => {
-    if (catalogNameInput) catalogNameInput.value = "";
-    if (catalogDescriptionInput) catalogDescriptionInput.value = "";
-    if (catalogCollectionInput) catalogCollectionInput.value = "";
-    if (catalogStackInput) catalogStackInput.checked = false;
-    if (catalogFileInput) catalogFileInput.value = "";
-    if (catalogFileLabel) catalogFileLabel.textContent = "Selecciona un archivo PDF…";
-    if (catalogStatus) {
-      catalogStatus.textContent = "";
-      catalogStatus.style.color = "#475569";
-      delete catalogStatus.dataset.state;
-    }
-  });
-
-  catalogListEl?.addEventListener('change', async (event) => {
-    const input = event.target;
-    if (!(input instanceof HTMLInputElement) || input.name !== "catalogStack") return;
-    const catalogId = input.value;
-    if (!catalogId) return;
-    try {
-      const response = await fetch(`/api/catalogs/${catalogId}/stack`, { method: "POST" });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || "No se pudo actualizar el destacado.");
-      if (catalogStatus) {
-        catalogStatus.textContent = "Catálogo destacado actualizado.";
-        catalogStatus.style.color = "#16a34a";
-        catalogStatus.dataset.state = "success";
-      }
-      await fetchCatalogs();
-    } catch (error) {
-      console.error("Actualizar stack catálogo", error);
-      if (catalogStatus) {
-        catalogStatus.textContent = error.message || "No se pudo actualizar el catálogo destacado.";
-        catalogStatus.style.color = "#b91c1c";
-        catalogStatus.dataset.state = "error";
-      }
-      await fetchCatalogs();
-    }
-  });
-
-  // New handler to allow multiple featured catalogs using checkboxes
-  catalogListEl?.addEventListener('change', async (event) => {
-    const input = event.target;
-    if (!(input instanceof HTMLInputElement) || !input.classList.contains('catalog-stack')) return;
-    const catalogId = input.dataset.id;
-    if (!catalogId) return;
-    try {
-      const response = await fetch(`/api/catalogs/${catalogId}/stack`, {
-        method: "POST",
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ value: !!input.checked })
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || "No se pudo actualizar el destacado.");
-      if (catalogStatus) {
-        catalogStatus.textContent = input.checked ? "Marcado como destacado." : "Destacado desactivado.";
-        catalogStatus.style.color = "#16a34a";
-        catalogStatus.dataset.state = "success";
-      }
-    } catch (error) {
-      console.error("Actualizar stack catálogo", error);
-      if (catalogStatus) {
-        catalogStatus.textContent = error.message || "No se pudo actualizar el catálogo destacado.";
-        catalogStatus.style.color = "#b91c1c";
-        catalogStatus.dataset.state = "error";
-      }
-      input.checked = !input.checked;
-    }
-  });
-
-  setActiveTab('list');
 
   // Dropdown toggles
   Object.entries(filtersConfig).forEach(([key, conf]) => {
@@ -696,8 +420,6 @@ resetButton.addEventListener("click", () => {
       }
     });
   });
-
-});
 
 // ---------- Detail Modal ----------
 const modal = document.getElementById("detailModal");
@@ -781,6 +503,17 @@ async function openDetail(idMaterial, baseData) {
   showModal();
   // remember id for later uploads
   window.__lastMaterialId = idMaterial;
+  setQuoteCandidate({
+    id: idMaterial,
+    material: baseData?.material_name || "Material",
+    color: baseData?.color || "",
+    proveedor: baseData?.provider_name || baseData?.proveedor || "",
+    unidad: baseData?.unidad || "",
+    costo: baseData?.costo_unitario ?? null,
+    stock: baseData?.stock_actual ?? baseData?.stock ?? null,
+    qty: 1,
+    image: imgUrl || "",
+  });
 
   try {
     // Fetch detail to ensure we have image_url/provider/category fresh from DB
@@ -803,6 +536,17 @@ async function openDetail(idMaterial, baseData) {
             detailPreview.referrerPolicy = 'no-referrer';
           }
         }
+        setQuoteCandidate({
+          id: idMaterial,
+          material: det.material_name || baseData?.material_name || "Material",
+          color: det.color || baseData?.color || "",
+          proveedor: det.provider_name || det.proveedor || baseData?.provider_name || baseData?.proveedor || "",
+          unidad: det.unidad || baseData?.unidad || "",
+          costo: det.costo_unitario ?? baseData?.costo_unitario ?? null,
+          stock: det.stock_actual ?? baseData?.stock_actual ?? baseData?.stock ?? null,
+          qty: currentQuoteCandidate?.qty || 1,
+          image: durl || currentQuoteCandidate?.image || "",
+        });
       }
     } catch {}
 
@@ -1100,4 +844,5 @@ thSortStock?.addEventListener("click", () => toggleSort(thSortStock));
 
 // Initialize sort indicators on load
 if (thSortId) thSortId.classList.add('sorted-asc');
+
 

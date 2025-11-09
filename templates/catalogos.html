@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cat&aacute;logos - Cojines Confort</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  </head>
+  <body>
+    <div class="layout">
+      <nav class="sidebar">
+        <h2 class="sidebar__title">Panel</h2>
+        <a class="sidebar__link" href="{{ url_for('materiales_page') }}">Listado</a>
+        <a class="sidebar__link is-active" href="{{ url_for('catalogos_page') }}">Cat&aacute;logos</a>
+        <a class="sidebar__link" href="{{ url_for('cotizador_page') }}">Cotizaci&oacute;n</a>
+      </nav>
+      <div class="layout__content">
+        <section class="tab-panel tab-panel--active">
+          <header class="page-header">
+            <div>
+              <h1>Cat&aacute;logos PDF</h1>
+              <p class="subtitle">Carga y consulta los cat&aacute;logos en PDF alojados en Azure Blob Storage.</p>
+            </div>
+          </header>
+          <main class="catalog-main">
+            <section class="catalog-upload card">
+              <h2>Subir cat&aacute;logo</h2>
+              <form id="catalogUploadForm" class="catalog-form">
+                <div class="form-field">
+                  <label for="catalogName">Nombre del cat&aacute;logo</label>
+                  <input type="text" id="catalogName" name="catalog_name" maxlength="255" required placeholder="Ej. Colecci&oacute;n verano" />
+                </div>
+                <div class="form-field">
+                  <label for="catalogDescription">Descripci&oacute;n</label>
+                  <textarea id="catalogDescription" name="description" maxlength="255" required placeholder="Describe el contenido del cat&aacute;logo"></textarea>
+                </div>
+                <div class="form-field">
+                  <label for="catalogCollection">Colecci&oacute;n</label>
+                  <input type="text" id="catalogCollection" name="collection" maxlength="255" placeholder="Ej. Temporada 2025" />
+                </div>
+                <label class="catalog-stack-toggle" for="catalogStack">
+                  <input type="checkbox" id="catalogStack" name="stack" />
+                  <span>Marcar como cat&aacute;logo destacado</span>
+                </label>
+                <label class="file-field" for="catalogFile">
+                  <input type="file" id="catalogFile" accept="application/pdf" required />
+                  <span id="catalogFileLabel">Selecciona un archivo PDF.</span>
+                </label>
+                <label class="file-field" for="catalogCover">
+                  <input type="file" id="catalogCover" accept="image/*" />
+                  <span id="catalogCoverLabel">Adjunta una portada (opcional).</span>
+                </label>
+                <label class="file-field" for="catalogCaratula">
+                  <input type="file" id="catalogCaratula" accept="image/*" />
+                  <span id="catalogCaratulaLabel">Adjuntar car&aacute;tula (opcional).</span>
+                </label>
+                <div class="catalog-actions">
+                  <button type="submit" class="button button-primary">Subir cat&aacute;logo</button>
+                  <button type="button" class="button button-muted" id="catalogClear">Limpiar</button>
+                </div>
+              </form>
+              <p id="catalogStatus" class="catalog-status"></p>
+            </section>
+
+            <section class="catalog-list card">
+              <header class="catalog-list__header">
+                <h2>Cat&aacute;logos disponibles</h2>
+                <button type="button" class="button button-secondary" id="catalogRefresh">Actualizar</button>
+              </header>
+              <div id="catalogList" class="catalog-list__body">
+                <p class="empty">No hay cat&aacute;logos disponibles.</p>
+              </div>
+            </section>
+          </main>
+        </section>
+      </div>
+    </div>
+
+    <footer class="page-footer">
+      <p>
+        Documentos servidos desde Azure Blob Storage.
+      </p>
+    </footer>
+
+    <script>
+      window.CHAT_WEBHOOK_URL = {{ chat_webhook_url|tojson }};
+    </script>
+    <script src="{{ url_for('static', filename='chat.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='catalogos.js') }}" defer></script>
+
+    <button id="chatFab" class="chat-fab" type="button" aria-label="Abrir chat de soporte">??</button>
+
+    <section id="chatPanel" class="chat-panel" aria-live="polite" aria-hidden="true">
+      <header class="chat-header">
+        <div>
+          <strong>Asistente</strong>
+          <small>Webhook conectado</small>
+        </div>
+        <div style="display:flex; gap:.5rem; align-items:center;">
+          <button id="chatLogsToggle" class="chat-close" type="button" title="Ver logs">Logs</button>
+          <button id="chatClose" class="chat-close" type="button">Cerrar</button>
+        </div>
+      </header>
+      <div id="chatMessages" class="chat-messages" role="log"></div>
+      <div id="chatLogs" class="chat-logs" hidden></div>
+      <footer class="chat-footer">
+        <div id="chatPreview" class="chat-preview" hidden></div>
+        <form id="chatForm">
+          <textarea id="chatInput" placeholder="Escribe tu mensaje..." aria-label="Mensaje"></textarea>
+          <div class="chat-actions">
+            <label class="chat-upload" aria-label="Adjuntar archivo">
+              ??
+              <input id="chatUpload" type="file" accept="image/*" />
+            </label>
+            <button id="chatRecord" type="button" class="chat-record">
+              <span>???</span>
+              Voz
+            </button>
+            <button id="chatSend" type="submit" class="chat-send">
+              Enviar
+            </button>
+          </div>
+        </form>
+        <div id="chatStatus" class="chat-status"></div>
+      </footer>
+    </section>
+    {% include "partials/auth_guard.html" %}
+  </body>
+</html>

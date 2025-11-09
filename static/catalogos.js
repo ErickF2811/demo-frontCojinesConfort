@@ -1,10 +1,8 @@
 // Catálogos: lógica separada
 // Este módulo controla el formulario de subida de catálogos (PDF + carátula)
-// y el listado con miniaturas. Requiere que exista el markup en templates/materiales.html
+// y el listado con miniaturas. Requiere el markup dedicado en templates/catalogos.html
 
 (function () {
-  // Señal para desactivar cualquier comportamiento antiguo en materiales.js
-  window.__CATALOGS_OVERRIDE = true;
 
   const $ = (id) => document.getElementById(id);
   const catalogUploadForm = $("catalogUploadForm");
@@ -184,16 +182,7 @@
 
   function init() {
     bindEvents();
-    // Si el panel "Catálogos" está activo cuando carga, traer datos.
-    const activePanel = document.querySelector('[data-tab-panel="catalogs"].tab-panel--active');
-    if (activePanel && !catalogsLoaded) fetchCatalogs();
-    // Si se cambia a la pestaña de catálogos desde fuera, cargamos la lista al primer ingreso
-    document.querySelectorAll('[data-tab-target]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const target = btn.getAttribute('data-tab-target');
-        if (target === 'catalogs' && !catalogsLoaded) fetchCatalogs();
-      });
-    });
+    fetchCatalogs();
   }
 
   window.addEventListener('DOMContentLoaded', init);

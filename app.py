@@ -10,10 +10,11 @@ import urllib.request
 from collections import defaultdict, deque
 from datetime import datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Any, Deque, Dict, List
 from uuid import uuid4
 
-from flask import Flask, jsonify, render_template, request, g
+from flask import Flask, jsonify, redirect, render_template, request, url_for, g
 
 from db import get_connection
 from services.catalogs import (
@@ -27,6 +28,44 @@ try:  # Optional dependency for Azure Blob Storage
     from azure.storage.blob import BlobServiceClient  # type: ignore
 except Exception:  # pragma: no cover - azure library might be missing
     BlobServiceClient = None  # type: ignore
+
+BASE_DIR = Path(__file__).resolve().parent
+
+
+def _extract_env_value_from_file(path: Path, keys: tuple[str, ...]) -> str:
+    """Best-effort parser for tiny .env-style files without adding dependencies."""
+    try:
+        content = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return ""
+
+    for raw_line in content:
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        for key in keys:
+            prefix = f"{key}="
+            if line.startswith(prefix):
+                value = line[len(prefix) :].strip().strip("'\"")
+                if value:
+                    return value
+    return ""
+
+
+def _load_clerk_publishable_key() -> str:
+    """Prefer OS env vars but fallback to .env files (root + clerk-javascript/.env)."""
+    for env_key in ("VITE_CLERK_PUBLISHABLE_KEY", "CLERK_PUBLISHABLE_KEY"):
+        value = os.environ.get(env_key)
+        if value:
+            return value.strip()
+
+    for env_path in (BASE_DIR / ".env", BASE_DIR / "clerk-javascript" / ".env"):
+        value = _extract_env_value_from_file(
+            env_path, ("CLERK_PUBLISHABLE_KEY", "VITE_CLERK_PUBLISHABLE_KEY")
+        )
+        if value:
+            return value
+    return ""
 
 
 def fetch_material_filters() -> Dict[str, List[str]]:
@@ -848,6 +887,25 @@ def pull_chat_messages(session_id: str) -> List[Dict[str, Any]]:
 
 
 app = Flask(__name__)
+
+app.config["CLERK_PUBLISHABLE_KEY"] = _load_clerk_publishable_key()
+if not app.config["CLERK_PUBLISHABLE_KEY"]:
+    app.logger.warning(
+        "CLERK_PUBLISHABLE_KEY is not configured. "
+        "Set CLERK_PUBLISHABLE_KEY/VITE_CLERK_PUBLISHABLE_KEY or add it to .env or clerk-javascript/.env."
+    )
+
+
+@app.context_processor
+def inject_clerk_config() -> Dict[str, str]:
+    """Expose Clerk values to every template."""
+    return {"clerk_publishable_key": app.config.get("CLERK_PUBLISHABLE_KEY", "")}
+
+
+@app.route("/favicon.ico")
+def favicon() -> tuple[str, int]:
+    """Avoid noisy 500s when the browser requests a favicon."""
+    return "", 204
 # Basic logging (LOG_LEVEL env can override)
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("app")
@@ -968,8 +1026,8 @@ def api_cors_preflight(any_path: str):
 
 @app.route("/")
 def index() -> str:
-    """Render materials page as the home."""
-    return render_template("materiales.html", chat_webhook_url=get_chat_webhook_url())
+    """Redirect to the materials listing."""
+    return redirect(url_for("materiales_page"))
 
 
 @app.route("/api/filters")
@@ -1003,6 +1061,19 @@ def api_stock():
 def materiales_page() -> str:
     """Render the materials-only page."""
     return render_template("materiales.html", chat_webhook_url=get_chat_webhook_url())
+
+
+@app.route("/catalogos")
+@app.route("/catalogo")
+def catalogos_page() -> str:
+    """Render the catalogs management page."""
+    return render_template("catalogos.html", chat_webhook_url=get_chat_webhook_url())
+
+
+@app.route("/cotizador")
+def cotizador_page() -> str:
+    """Render the quote builder page."""
+    return render_template("cotizador.html", chat_webhook_url=get_chat_webhook_url())
 
 
 @app.route("/api/materiales")

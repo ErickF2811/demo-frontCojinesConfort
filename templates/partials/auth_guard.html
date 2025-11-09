@@ -1,0 +1,29 @@
+{% set _clerk_key = clerk_publishable_key or '' %}
+<div id="auth-overlay" class="auth-overlay" hidden>
+  <div class="auth-card">
+    <p class="eyebrow auth-eyebrow">Cojines Confort</p>
+    <h1>Acceso restringido</h1>
+    <p class="helper">
+      Debes iniciar sesión con Clerk antes de consultar materiales, catálogos o el cotizador.
+    </p>
+    <div id="clerk-sign-in"></div>
+    <p id="auth-role-meta" class="auth-role-meta" hidden></p>
+  </div>
+</div>
+<div id="clerk-user-button-anchor" class="auth-user-button" hidden>
+  <span id="auth-role-pill" class="role-pill" hidden></span>
+  <div id="clerk-user-button-slot"></div>
+</div>
+<script>
+  window.CLERK_PUBLISHABLE_KEY = {{ _clerk_key|tojson }};
+</script>
+{% if _clerk_key %}
+<script
+  id="clerk-browser"
+  async
+  crossorigin="anonymous"
+  data-clerk-publishable-key="{{ _clerk_key }}"
+  src="https://cdn.jsdelivr.net/npm/@clerk/clerk-js@5/dist/clerk.browser.js"
+></script>
+{% endif %}
+<script type="module" src="{{ url_for('static', filename='auth.js') }}"></script>

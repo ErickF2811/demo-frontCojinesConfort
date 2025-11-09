@@ -1431,3 +1431,199 @@ body.no-scroll .chat-fab { display: none !important; }
 #chatLogsToggle { display: none !important; }
 .chat-logs { display: none !important; }
 
+.table-wrapper--quote {
+  overflow-x: visible;
+}
+
+.quote-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.quote-thumb-cell {
+  width: 150px;
+  text-align: left;
+  padding-left: 0;
+}
+
+.quote-thumb-link,
+.quote-thumb,
+.quote-thumb img {
+  display: inline-block;
+  width: 100px;
+  height: 100px;
+  border-radius: 16px;
+  object-fit: cover;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.quote-thumb-link img {
+  width: 100px;
+  height: 100px;
+}
+
+.quote-thumb--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+@media (max-width: 640px) {
+  .quote-table thead {
+    display: none;
+  }
+
+  .quote-table tbody {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1rem;
+  }
+
+  .quote-table tr {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 1rem;
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+    background: #fff;
+    gap: 0.5rem;
+  }
+
+  .quote-table td {
+    display: flex;
+    flex-direction: column;
+    font-size: 0.95rem;
+    padding: 0;
+  }
+
+  .quote-table td::before {
+    content: attr(data-label);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #94a3b8;
+    margin-bottom: 0.15rem;
+  }
+
+  .quote-thumb-cell {
+    width: 100%;
+    margin-bottom: 0.5rem;
+  }
+
+  .quote-thumb-cell::before {
+    display: none;
+  }
+}
+
+/* --------- Clerk auth guard ---------- */
+body.auth-locked {
+  overflow: hidden;
+}
+
+.auth-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 7, 19, 0.92);
+  backdrop-filter: blur(16px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  z-index: 2000;
+}
+
+.auth-overlay[hidden] {
+  display: none;
+}
+
+.auth-card {
+  width: min(420px, 100%);
+  background: rgba(17, 22, 36, 0.95);
+  border-radius: 28px;
+  padding: 2.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 40px 90px rgba(0, 0, 0, 0.45);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.auth-card h1 {
+  margin: 0.4rem 0 0.6rem;
+  font-size: clamp(1.8rem, 4vw, 2.4rem);
+}
+
+.auth-card .helper {
+  color: #b5bfd9;
+  margin: 0 auto 1.25rem;
+  max-width: 32ch;
+}
+
+#clerk-sign-in {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+#clerk-sign-in > div {
+  width: min(360px, 100%);
+}
+
+.auth-role-meta {
+  margin-top: 1rem;
+  font-size: 0.9rem;
+  color: #c3cdf1;
+}
+
+.auth-user-button {
+  position: fixed;
+  top: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  background: rgba(15, 18, 31, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  z-index: 1500;
+}
+
+.auth-user-button[hidden] {
+  display: none;
+}
+
+.role-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.1rem 0.85rem;
+  font-size: 0.85rem;
+  text-transform: capitalize;
+  background: rgba(124, 93, 255, 0.18);
+  border: 1px solid rgba(124, 93, 255, 0.35);
+  color: #e3dcff;
+}
+
+@media (max-width: 640px) {
+  .auth-card {
+    padding: 1.75rem;
+    gap: 1rem;
+  }
+  .auth-user-button {
+    top: auto;
+    bottom: 1.25rem;
+    left: 50%;
+    transform: translateX(-50%);
+    flex-direction: column;
+  }
+}

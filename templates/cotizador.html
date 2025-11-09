@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cotización · Cojines Confort</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  </head>
+  <body>
+    <div class="layout">
+      <nav class="sidebar">
+        <h2 class="sidebar__title">Panel</h2>
+        <a class="sidebar__link" href="{{ url_for('materiales_page') }}">Listado</a>
+        <a class="sidebar__link" href="{{ url_for('catalogos_page') }}">Catálogos</a>
+        <a class="sidebar__link is-active" href="{{ url_for('cotizador_page') }}">Cotización</a>
+      </nav>
+      <div class="layout__content">
+        <section class="tab-panel tab-panel--active">
+          <header class="page-header">
+            <div>
+              <h1>Cotización</h1>
+              <p class="subtitle">Arma el costo del producto a partir de materiales. Guarda tu borrador y envíalo a cotización.</p>
+            </div>
+          </header>
+
+          <main>
+            <section class="card quote-list">
+              <header class="quote-list__header">
+                <div>
+                  <h2>Lista de materiales</h2>
+                  <p id="quoteSummary" class="muted">Sin materiales seleccionados.</p>
+                </div>
+                <div class="quote-total">
+                  <span>Total:</span>
+                  <strong id="quoteTotal">0,00 US$</strong>
+                </div>
+              </header>
+              <div class="table-wrapper table-wrapper--quote">
+                <table class="quote-table">
+                  <thead>
+                    <tr>
+                      <th>Imagen</th>
+                      <th>ID</th>
+                      <th>Material</th>
+                      <th>Unidad</th>
+                      <th>Unitario</th>
+                      <th>Cant.</th>
+                      <th>Subtotal</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="quoteTableBody">
+                    <tr>
+                      <td colspan="8" class="empty">No hay materiales en la lista.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <footer class="quote-list__footer">
+                <button id="quoteClear" class="button button-muted" type="button">Vaciar lista</button>
+                <button id="quoteSubmit" class="button button-primary" type="button">Mandar a cotizar</button>
+                <span id="quoteActionStatus" class="muted" aria-live="polite"></span>
+              </footer>
+            </section>
+          </main>
+        </section>
+      </div>
+    </div>
+
+    <footer class="page-footer">
+      <p>Datos desde vista <code>vista_materiales_proveedores</code> en PostgreSQL.</p>
+    </footer>
+
+    <script>
+      window.CHAT_WEBHOOK_URL = {{ chat_webhook_url|tojson }};
+    </script>
+    <script src="{{ url_for('static', filename='chat.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='cotizador.js') }}" defer></script>
+
+    <button id="chatFab" class="chat-fab" type="button" aria-label="Abrir chat de soporte">&#128172;</button>
+    <section id="chatPanel" class="chat-panel" aria-live="polite" aria-hidden="true">
+      <header class="chat-header">
+        <div>
+          <strong>Asistente</strong>
+          <small>Webhook conectado</small>
+        </div>
+        <div style="display:flex; gap:.5rem; align-items:center;">
+          <button id="chatLogsToggle" class="chat-close" type="button" title="Ver logs">Logs</button>
+          <button id="chatClose" class="chat-close" type="button">Cerrar</button>
+        </div>
+      </header>
+      <div id="chatMessages" class="chat-messages" role="log"></div>
+      <div id="chatLogs" class="chat-logs" hidden></div>
+      <footer class="chat-footer">
+        <div id="chatPreview" class="chat-preview" hidden></div>
+        <form id="chatForm">
+          <textarea id="chatInput" placeholder="Escribe tu mensaje..." aria-label="Mensaje"></textarea>
+          <div class="chat-actions">
+            <label class="chat-upload" aria-label="Adjuntar archivo">
+              &#128206;
+              <input id="chatUpload" type="file" accept="image/*" />
+            </label>
+            <button id="chatRecord" type="button" class="chat-record">
+              <span>&#127908;</span>
+              Voz
+            </button>
+            <button id="chatSend" type="submit" class="chat-send">
+              Enviar
+            </button>
+          </div>
+        </form>
+        <div id="chatStatus" class="chat-status"></div>
+      </footer>
+    </section>
+    {% include "partials/auth_guard.html" %}
+  </body>
+</html>
