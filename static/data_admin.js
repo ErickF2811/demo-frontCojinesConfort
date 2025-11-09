@@ -12,8 +12,14 @@ const state = {
   hiddenColumns: [],
   columnLabels: {},
   thumbnailColumns: [],
+  uploadFields: {},
+  imageFields: [],
   imageField: null,
+  primaryImageColumn: null,
   pendingImageRowId: null,
+  pendingImageColumn: null,
+  pendingUploadConfig: null,
+  activeUploadColumn: null,
 };
 
 const els = {
@@ -29,7 +35,12 @@ const els = {
   meta: document.getElementById('dataTableMeta'),
   prevBtn: document.getElementById('dataPrevPage'),
   nextBtn: document.getElementById('dataNextPage'),
-  indicator: document.getElementById('dataPageIndicator'),
+  perPageSelect: document.getElementById('dataPerPageSelect'),
+  pageInput: document.getElementById('dataPageInput'),
+  pageTotal: document.getElementById('dataPageTotal'),
+  tableWrapper: null,
+  scrollTop: document.getElementById('dataTableScrollTop'),
+  scrollInner: document.getElementById('dataTableScrollInner'),
   modal: document.getElementById('dataEditorModal'),
   form: document.getElementById('dataEditorForm'),
   editorTitle: document.getElementById('dataEditorTitle'),
@@ -38,9 +49,13 @@ const els = {
   lightbox: document.getElementById('dataLightbox'),
   lightboxImg: document.getElementById('dataLightboxImg'),
   lightboxUploadBtn: document.getElementById('dataLightboxUploadBtn'),
-  imageModalBtn: document.getElementById('dataImageModalBtn'),
+  lightboxLink: document.getElementById('dataLightboxLink'),
+  lightboxLinkAnchor: document.getElementById('dataLightboxLinkAnchor'),
   lightboxEmpty: document.getElementById('dataLightboxEmpty'),
 };
+
+let scrollSyncInitialized = false;
+let isSyncingScroll = false;
 
 const fetchJSON = async (url, options = {}) => {
   const response = await fetch(url, options);
@@ -58,6 +73,125 @@ const setStatus = (message, tone = 'muted') => {
   if (!els.status) return;
   els.status.textContent = message;
   els.status.className = `data-admin__status is-${tone}`;
+};
+
+const getTotalPages = () => {
+  if (!state.perPage) return 1;
+  return Math.max(1, Math.ceil((state.total || 0) / state.perPage));
+};
+
+const clampPage = (value) => {
+  const totalPages = getTotalPages();
+  if (Number.isNaN(value) || value < 1) return 1;
+  if (value > totalPages) return totalPages;
+  return value;
+};
+
+const updatePaginationUI = () => {
+  const totalPages = getTotalPages();
+  if (els.pageInput) {
+    els.pageInput.value = state.page;
+    els.pageInput.min = 1;
+    els.pageInput.max = totalPages;
+  }
+  if (els.pageTotal) {
+    els.pageTotal.textContent = totalPages;
+  }
+  if (els.perPageSelect) {
+    const hasOption = Array.from(els.perPageSelect.options).some(
+      (opt) => Number(opt.value) === Number(state.perPage)
+    );
+    if (!hasOption) {
+      const option = document.createElement('option');
+      option.value = state.perPage;
+      option.textContent = state.perPage;
+      els.perPageSelect.appendChild(option);
+    }
+    els.perPageSelect.value = String(state.perPage);
+  }
+  if (els.prevBtn) {
+    els.prevBtn.disabled = state.page <= 1;
+  }
+  if (els.nextBtn) {
+    els.nextBtn.disabled = state.page >= totalPages;
+  }
+};
+
+const initScrollSync = () => {
+  if (scrollSyncInitialized) return;
+  els.tableWrapper = document.querySelector('.data-admin__table-wrapper');
+  if (!els.tableWrapper || !els.scrollTop) return;
+  scrollSyncInitialized = true;
+  const syncPositions = (source, target) => {
+    if (!source || !target) return;
+    if (isSyncingScroll) return;
+    isSyncingScroll = true;
+    target.scrollLeft = source.scrollLeft;
+    requestAnimationFrame(() => {
+      isSyncingScroll = false;
+    });
+  };
+  els.scrollTop.addEventListener('scroll', () => syncPositions(els.scrollTop, els.tableWrapper));
+  els.tableWrapper.addEventListener('scroll', () => syncPositions(els.tableWrapper, els.scrollTop));
+};
+
+const updateScrollMirror = () => {
+  els.tableWrapper = document.querySelector('.data-admin__table-wrapper');
+  if (!els.scrollTop || !els.scrollInner || !els.tableWrapper) return;
+  const table = document.querySelector('.data-admin__table');
+  const totalWidth = table?.scrollWidth || 0;
+  const viewport = els.tableWrapper.clientWidth;
+  els.scrollInner.style.width = totalWidth ? `${totalWidth}px` : '100%';
+  const needsScroll = totalWidth > viewport + 1;
+  els.scrollTop.classList.toggle('is-hidden', !needsScroll);
+  if (needsScroll) {
+    els.scrollTop.scrollLeft = els.tableWrapper.scrollLeft;
+  } else {
+    els.scrollTop.scrollLeft = 0;
+  }
+};
+
+const handlePageJump = () => {
+  if (!els.pageInput) return;
+  const requested = parseInt(els.pageInput.value, 10);
+  const nextPage = clampPage(requested);
+  if (nextPage !== state.page) {
+    state.page = nextPage;
+    loadRows();
+  } else {
+    updatePaginationUI();
+  }
+};
+
+const getUploadColumnOrder = () => {
+  const uploadColumns = Object.keys(state.uploadFields || {});
+  if (!uploadColumns.length) {
+    return [];
+  }
+  const prioritized = [];
+  state.imageFields.forEach((column) => {
+    if (uploadColumns.includes(column) && !prioritized.includes(column)) {
+      prioritized.push(column);
+    }
+  });
+  uploadColumns.forEach((column) => {
+    if (!prioritized.includes(column)) {
+      prioritized.push(column);
+    }
+  });
+  return prioritized;
+};
+
+const ensureActiveUploadColumn = () => {
+  const ordered = getUploadColumnOrder();
+  if (!ordered.length) {
+    state.activeUploadColumn = null;
+    return null;
+  }
+  if (!state.activeUploadColumn || !ordered.includes(state.activeUploadColumn)) {
+    state.activeUploadColumn = ordered[0];
+  }
+  return state.activeUploadColumn;
 };
 
 const populateTableSelect = () => {
@@ -91,12 +225,35 @@ const isPdfUrl = (value) =>
 
 const renderThumbnail = (column, value, row, options = {}) => {
   const { interactive = false } = options;
-  if (!value) return '<span class="muted">Sin archivo</span>';
-  const encodedUrl = encodeURI(value);
+  const uploadCfg = (column && state.uploadFields[column]) || {};
+  const kind = uploadCfg.type || 'image';
   const rowId = row[state.primaryKey];
-  if (isPdfUrl(value)) {
+  const encodedUrl = value ? encodeURI(value) : '';
+  const displayLabel = getColumnLabel(column);
+  const description = kind === 'file' ? 'archivo' : 'imagen';
+
+  if (!value && !interactive) {
+    return '<span class="muted">Sin archivo</span>';
+  }
+
+  if (!value && interactive) {
+    return `
+      <button
+        type="button"
+        class="data-admin__thumbnail data-admin__thumbnail--empty"
+        data-url=""
+        data-column="${column}"
+        data-id="${rowId}"
+        data-interactive="true"
+      >
+        Cargar ${description}
+      </button>
+    `;
+  }
+
+  if (kind === 'file' || isPdfUrl(value)) {
     if (!interactive) {
-      return `<a class="data-admin__pdf-link" href="${encodedUrl}" target="_blank" rel="noopener">PDF</a>`;
+      return `<a class="data-admin__pdf-link" href="${encodedUrl}" target="_blank" rel="noopener">Archivo</a>`;
     }
     return `
       <button
@@ -106,8 +263,10 @@ const renderThumbnail = (column, value, row, options = {}) => {
         data-column="${column}"
         data-id="${rowId}"
         data-interactive="true"
+        aria-label="Abrir ${description} (${displayLabel})"
+        title="Abrir ${description} (${displayLabel})"
       >
-        PDF
+        Archivo
       </button>
     `;
   }
@@ -127,9 +286,10 @@ const renderThumbnail = (column, value, row, options = {}) => {
       data-column="${column}"
       data-id="${rowId}"
       data-interactive="true"
+      aria-label="Abrir ${description} (${displayLabel})"
+      title="Abrir ${description} (${displayLabel})"
     >
       <img src="${encodedUrl}" alt="${column}" />
-      <span>Ver</span>
     </div>
   `;
 };
@@ -137,14 +297,15 @@ const renderThumbnail = (column, value, row, options = {}) => {
 const renderCell = (column, rawValue, row, context = 'table') => {
   const value = rawValue ?? '';
   if (state.thumbnailColumns.includes(column)) {
-    return renderThumbnail(column, value, row, {
-      interactive: context === 'modal',
-    });
+    const hasUploadField = Boolean(state.uploadFields[column]);
+    const canPreview = hasUploadField || state.imageFields.includes(column);
+    const interactive = context === 'modal' ? canPreview : hasUploadField;
+    return renderThumbnail(column, value, row, { interactive });
   }
   if (typeof value === 'string' && value.startsWith('http')) {
     return `<a href="${value}" target="_blank" rel="noopener">${value}</a>`;
   }
-  return value === '' ? '<span class="muted">—</span>' : value;
+  return value === '' ? '<span class="muted">&mdash;</span>' : value;
 };
 
 const getVisibleColumns = () => {
@@ -164,6 +325,8 @@ const renderTable = () => {
     els.head.innerHTML = '';
     els.body.innerHTML =
       '<tr><td class="empty" colspan="1">Selecciona una tabla para comenzar.</td></tr>';
+    updatePaginationUI();
+    updateScrollMirror();
     return;
   }
 
@@ -171,6 +334,8 @@ const renderTable = () => {
     els.head.innerHTML = '';
     els.body.innerHTML =
       '<tr><td class="empty" colspan="1">Sin datos disponibles.</td></tr>';
+    updatePaginationUI();
+    updateScrollMirror();
     return;
   }
 
@@ -179,6 +344,7 @@ const renderTable = () => {
     els.head.innerHTML = '';
     els.body.innerHTML =
       '<tr><td class="empty" colspan="1">No hay columnas visibles.</td></tr>';
+    updateScrollMirror();
     return;
   }
 
@@ -194,8 +360,10 @@ const renderTable = () => {
       return `
         <tr data-id="${row[state.primaryKey]}">
           <td class="actions">
-            <button class="button button-secondary" data-action="edit" data-id="${row[state.primaryKey]}">Editar</button>
-            <button class="button button-danger" data-action="delete" data-id="${row[state.primaryKey]}">Eliminar</button>
+            <div class="data-admin__action-buttons">
+              <button class="button button-secondary" data-action="edit" data-id="${row[state.primaryKey]}">Editar</button>
+              <button class="button button-danger" data-action="delete" data-id="${row[state.primaryKey]}">Eliminar</button>
+            </div>
           </td>
           ${visibleColumns
             .map(
@@ -207,25 +375,28 @@ const renderTable = () => {
       `;
     })
     .join('');
-
-  if (els.indicator) {
-    const totalPages = Math.max(1, Math.ceil(state.total / state.perPage));
-    els.indicator.textContent = `${state.page} / ${totalPages}`;
-  }
-  if (els.prevBtn) {
-    els.prevBtn.disabled = state.page <= 1;
-  }
-  if (els.nextBtn) {
-    els.nextBtn.disabled = state.page * state.perPage >= state.total;
-  }
+  updatePaginationUI();
+  updateScrollMirror();
 };
 
 const applyDisplayMeta = (display = {}) => {
   state.hiddenColumns = display.hidden || [];
   state.columnLabels = display.labels || {};
   state.thumbnailColumns = display.thumbnail_columns || [];
-  state.imageField = display.image_field || null;
+  state.uploadFields = display.upload_fields || {};
+  const imageFields =
+    display.image_fields ||
+    (display.image_field ? [display.image_field] : []) ||
+    Object.keys(state.uploadFields).filter(
+      (key) => (state.uploadFields[key]?.type || 'image') === 'image'
+    );
+  state.imageFields = imageFields;
+  state.primaryImageColumn = imageFields[0] || null;
+  state.imageField = state.primaryImageColumn;
   state.pendingImageRowId = null;
+  state.pendingImageColumn = null;
+  state.pendingUploadConfig = null;
+  ensureActiveUploadColumn();
 };
 
 const renderMeta = () => {
@@ -256,6 +427,11 @@ const loadRows = async () => {
     state.total = data.total || 0;
     state.primaryKey = data.primary_key;
     applyDisplayMeta(data.display || {});
+    const clamped = clampPage(state.page);
+    if (clamped !== state.page && state.total > 0) {
+      state.page = clamped;
+      return loadRows();
+    }
     renderMeta();
     renderTable();
     setStatus(
@@ -306,22 +482,23 @@ const openEditor = (row) => {
       const value = row[col] ?? '';
       const label = getColumnLabel(col);
       const isLong = String(value).length > 60;
-      const isImageField = col === state.imageField;
-      const inputHtml = isImageField
+      const uploadCfg = state.uploadFields[col];
+      const isUploadField = Boolean(uploadCfg);
+      const inputHtml = isUploadField
         ? `<input name="${col}" type="hidden" value="${value}" />`
         : isLong
           ? `<textarea name="${col}" rows="3">${value}</textarea>`
           : `<input name="${col}" type="text" value="${value}" />`;
       const preview =
-        state.thumbnailColumns.includes(col) && value
+        isUploadField && value
           ? `<div class="data-admin__image-preview" data-thumbnail-wrapper="${col}">
               ${renderThumbnail(col, value, row, { interactive: true })}
-              ${isImageField ? '<small>Haz clic para abrir o reemplazar.</small>' : ''}
+              <small>Haz clic para abrir o reemplazar.</small>
             </div>`
           : '';
       return `
         <div class="data-admin__field-wrapper">
-          <label class="data-admin__field${isImageField ? ' data-admin__field--hidden' : ''}">
+          <label class="data-admin__field${isUploadField ? ' data-admin__field--hidden' : ''}">
             <span>${label}</span>
             ${inputHtml}
           </label>
@@ -331,15 +508,8 @@ const openEditor = (row) => {
     })
     .join('');
 
-  if (els.imageModalBtn) {
-    if (state.imageField) {
-      els.imageModalBtn.hidden = false;
-      els.imageModalBtn.disabled = false;
-      els.imageModalBtn.dataset.rowId = row[state.primaryKey];
-    } else {
-      els.imageModalBtn.hidden = true;
-    }
-  }
+  ensureActiveUploadColumn();
+
 };
 
 const closeEditor = () => {
@@ -410,16 +580,28 @@ const handleDelete = async (rowId) => {
 
 const handleThumbnailInteraction = (thumbnail) => {
   if (!thumbnail) return;
-  const url = thumbnail.getAttribute('data-url');
+  const url = thumbnail.getAttribute('data-url') || '';
   const column = thumbnail.getAttribute('data-column');
   const thumbRowId = thumbnail.getAttribute('data-id');
-  if (!url) return;
-  const decodedUrl = decodeURI(url);
-  if (state.imageField && column === state.imageField && thumbRowId) {
-    openImageLightbox(decodedUrl, thumbRowId);
+  if (column) {
+    state.activeUploadColumn = column;
+  }
+  const decodedUrl = url ? decodeURI(url) : '';
+  const canUpdate =
+    column &&
+    (state.uploadFields[column] || state.imageFields.includes(column));
+  if (canUpdate && thumbRowId) {
+    openImageLightbox(decodedUrl, thumbRowId, column);
     return;
   }
-  window.open(decodedUrl, '_blank', 'noopener,noreferrer');
+  if (decodedUrl) {
+    window.open(decodedUrl, '_blank', 'noopener,noreferrer');
+  }
+};
+
+const getInteractiveThumbnail = (target) => {
+  if (!(target instanceof HTMLElement)) return null;
+  return target.closest('.data-admin__thumbnail[data-interactive="true"]');
 };
 
 const handleTableAction = (event) => {
@@ -439,8 +621,27 @@ const handleTableAction = (event) => {
     handleDelete(rowId);
   }
 
-  const thumbnail = target.closest('.data-admin__thumbnail[data-interactive="true"]');
+  const thumbnail = getInteractiveThumbnail(target);
   if (thumbnail) {
+    handleThumbnailInteraction(thumbnail);
+  }
+};
+
+const handleFormThumbnailClick = (event) => {
+  const thumbnail = getInteractiveThumbnail(event.target);
+  if (thumbnail) {
+    event.preventDefault();
+    handleThumbnailInteraction(thumbnail);
+  }
+};
+
+const handleThumbnailKeydown = (event) => {
+  if ((event.key !== 'Enter' && event.key !== ' ') || !(event.target instanceof HTMLElement)) {
+    return;
+  }
+  const thumbnail = getInteractiveThumbnail(event.target);
+  if (thumbnail) {
+    event.preventDefault();
     handleThumbnailInteraction(thumbnail);
   }
 };
@@ -492,79 +693,122 @@ const handleImport = async (event) => {
 const handleImageUpload = async (event) => {
   const file = event.target.files?.[0];
   const rowId = state.pendingImageRowId;
+  const column =
+    state.pendingImageColumn ||
+    state.imageFields[0] ||
+    Object.keys(state.uploadFields || {})[0];
   event.target.value = '';
-  if (!file || !rowId || !state.activeTable) {
+  if (!file || !rowId || !state.activeTable || !column) {
     return;
   }
   const formData = new FormData();
   formData.append('file', file);
+  formData.append('column', column);
   try {
-    setStatus('Subiendo imagen...', 'info');
+    setStatus('Subiendo archivo...', 'info');
     const result = await fetchJSON(`/api/data/${state.activeTable}/${rowId}/image`, {
       method: 'POST',
       body: formData,
     });
     const newUrl = result?.url;
+    const usedColumn = result?.column || column;
+    if (usedColumn) {
+      state.activeUploadColumn = usedColumn;
+    }
     if (newUrl) {
       state.rows = state.rows.map((row) =>
         String(row[state.primaryKey]) === String(rowId)
-          ? { ...row, [state.imageField]: newUrl }
+          ? { ...row, [usedColumn]: newUrl }
           : row
       );
-      if (
-        state.editingRow &&
-        String(state.editingRow[state.primaryKey]) === String(rowId) &&
-        state.imageField
-      ) {
-        state.editingRow[state.imageField] = newUrl;
+      if (state.editingRow && String(state.editingRow[state.primaryKey]) === String(rowId)) {
+        state.editingRow[usedColumn] = newUrl;
         if (state.originalRow) {
-          state.originalRow[state.imageField] = newUrl;
+          state.originalRow[usedColumn] = newUrl;
         }
-        const hiddenInput = els.form?.querySelector(
-          `input[name="${state.imageField}"]`
-        );
+        const hiddenInput = els.form?.querySelector(`input[name="${usedColumn}"]`);
         if (hiddenInput) hiddenInput.value = newUrl;
-        const wrapper = els.form?.querySelector(
-          `[data-thumbnail-wrapper="${state.imageField}"]`
-        );
+        const wrapper = els.form?.querySelector(`[data-thumbnail-wrapper="${usedColumn}"]`);
         if (wrapper) {
           wrapper.innerHTML = `
-            ${renderThumbnail(state.imageField, newUrl, state.editingRow)}
+            ${renderThumbnail(usedColumn, newUrl, state.editingRow, { interactive: true })}
             <small>Haz clic para abrir o reemplazar.</small>
           `;
         }
       }
     }
-    setStatus('Imagen actualizada.', 'success');
+    setStatus('Archivo actualizado.', 'success');
     await loadRows();
     closeImageLightbox();
   } catch (error) {
     console.error(error);
-    setStatus(error.message || 'No se pudo actualizar la imagen.', 'error');
+    setStatus(error.message || 'No se pudo actualizar el archivo.', 'error');
   }
 };
 
-const openImageLightbox = (url, rowId) => {
+const openImageLightbox = (url, rowId, column = null) => {
   if (!els.lightbox || !els.lightboxImg) {
-    window.open(url, '_blank', 'noopener,noreferrer');
+    if (url) {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
     return;
   }
+  const fallbackColumn =
+    column ||
+    Object.keys(state.uploadFields || {})[0] ||
+    state.imageFields[0] ||
+    null;
+  const uploadCfg = (fallbackColumn && state.uploadFields[fallbackColumn]) || {};
+  const kind = uploadCfg.type || 'image';
+  const hasUrl = Boolean(url);
+
+  state.pendingUploadConfig = uploadCfg;
   els.lightbox.hidden = false;
   els.lightbox.setAttribute('aria-hidden', 'false');
-  if (url) {
+
+  if (kind === 'image' && hasUrl) {
     els.lightboxImg.hidden = false;
     els.lightboxImg.src = url;
     els.lightboxImg.alt = `Vista previa (${rowId})`;
-    if (els.lightboxEmpty) {
-      els.lightboxEmpty.hidden = true;
-    }
   } else {
     els.lightboxImg.hidden = true;
-    if (els.lightboxEmpty) {
-      els.lightboxEmpty.hidden = false;
+    els.lightboxImg.removeAttribute('src');
+  }
+
+  if (els.lightboxLink && els.lightboxLinkAnchor) {
+    if (kind === 'file' && hasUrl) {
+      els.lightboxLinkAnchor.href = url;
+      els.lightboxLink.removeAttribute('hidden');
+    } else {
+      els.lightboxLink.setAttribute('hidden', 'hidden');
+      els.lightboxLinkAnchor.removeAttribute('href');
     }
   }
+
+  if (els.lightboxEmpty) {
+    if (!hasUrl) {
+      els.lightboxEmpty.textContent =
+        kind === 'file'
+          ? 'Este registro no tiene archivo. Sube uno nuevo.'
+          : 'Este registro no tiene imagen. Sube una nueva.';
+      els.lightboxEmpty.hidden = false;
+    } else {
+      els.lightboxEmpty.hidden = true;
+    }
+  }
+
+  if (els.lightboxUploadBtn) {
+    els.lightboxUploadBtn.textContent =
+      kind === 'file' ? 'Cargar nuevo archivo' : 'Cargar nueva imagen';
+  }
+
   state.pendingImageRowId = rowId;
+  state.pendingImageColumn = fallbackColumn;
+  if (fallbackColumn) {
+    state.activeUploadColumn = fallbackColumn;
+  } else {
+    ensureActiveUploadColumn();
+  }
   document.body.classList.add('modal-open');
 };
 
@@ -572,18 +816,32 @@ const closeImageLightbox = () => {
   if (!els.lightbox || !els.lightboxImg) return;
   els.lightbox.hidden = true;
   els.lightbox.setAttribute('aria-hidden', 'true');
-  els.lightboxImg.src = '';
+  els.lightboxImg.removeAttribute('src');
   els.lightboxImg.hidden = false;
+  if (els.lightboxLink) {
+    els.lightboxLink.setAttribute('hidden', 'hidden');
+  }
+  if (els.lightboxLinkAnchor) {
+    els.lightboxLinkAnchor.removeAttribute('href');
+  }
   if (els.lightboxEmpty) {
     els.lightboxEmpty.hidden = true;
   }
   state.pendingImageRowId = null;
+  state.pendingImageColumn = null;
+  state.pendingUploadConfig = null;
+  if (els.imageInput) {
+    els.imageInput.accept = '*/*';
+  }
   document.body.classList.remove('modal-open');
 };
 
 const initDataAdmin = () => {
   if (!els.tableSelect) return;
+  initScrollSync();
+  updateScrollMirror();
   loadTables();
+  window.addEventListener('resize', updateScrollMirror);
 
   els.tableSelect.addEventListener('change', (event) => {
     const value = event.target.value;
@@ -607,9 +865,32 @@ const initDataAdmin = () => {
   });
 
   els.nextBtn?.addEventListener('click', () => {
-    if (state.page * state.perPage < state.total) {
+    if (state.page < getTotalPages()) {
       state.page += 1;
       loadRows();
+    }
+  });
+
+  els.perPageSelect?.addEventListener('change', (event) => {
+    const value = parseInt(event.target.value, 10);
+    if (Number.isNaN(value) || value <= 0) {
+      event.target.value = state.perPage;
+      return;
+    }
+    if (value === state.perPage) {
+      return;
+    }
+    state.perPage = value;
+    state.page = 1;
+    loadRows();
+  });
+
+  const pageInputHandler = () => handlePageJump();
+  els.pageInput?.addEventListener('change', pageInputHandler);
+  els.pageInput?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      pageInputHandler();
     }
   });
 
@@ -620,33 +901,15 @@ const initDataAdmin = () => {
   els.imageInput?.addEventListener('change', handleImageUpload);
 
   els.body?.addEventListener('click', handleTableAction);
-  els.body?.addEventListener('keydown', (event) => {
-    if (
-      (event.key === 'Enter' || event.key === ' ') &&
-      event.target instanceof HTMLElement
-    ) {
-      const thumb = event.target.closest('.data-admin__thumbnail');
-      if (thumb) {
-        event.preventDefault();
-        handleThumbnailInteraction(thumb);
-      }
-    }
-  });
+  els.body?.addEventListener('keydown', handleThumbnailKeydown);
+  els.form?.addEventListener('click', handleFormThumbnailClick);
+  els.form?.addEventListener('keydown', handleThumbnailKeydown);
 
   els.form?.addEventListener('submit', handleEditSubmit);
   document.querySelectorAll('[data-close-editor]').forEach((element) => {
     element.addEventListener('click', closeEditor);
   });
 
-  els.imageModalBtn?.addEventListener('click', () => {
-    if (!state.imageField || !state.editingRow) {
-      setStatus('No hay imagen asociada a este registro.', 'error');
-      return;
-    }
-    const url = state.editingRow[state.imageField] || '';
-    const rowId = state.editingRow[state.primaryKey];
-    openImageLightbox(url, rowId);
-  });
 
   els.lightbox?.addEventListener('click', (event) => {
     if (event.target === els.lightbox || event.target.hasAttribute('data-close-lightbox')) {
@@ -658,6 +921,9 @@ const initDataAdmin = () => {
       setStatus('No se encontró el selector de archivos para subir imagen.', 'error');
       return;
     }
+    const cfg = state.pendingUploadConfig || {};
+    const accept = cfg.accept || (cfg.type === 'file' ? '*/*' : 'image/*');
+    els.imageInput.accept = accept;
     els.imageInput.value = '';
     els.imageInput.click();
   });

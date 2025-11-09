@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Data · Cojines Confort</title>
+    <title>Data - Cojines Confort</title>
     <link
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap"
@@ -67,16 +67,40 @@
                 <p id="dataTableMeta" class="muted"></p>
               </div>
               <div class="data-admin__pagination">
-                <button id="dataPrevPage" class="button button-muted" type="button">
-                  ←
-                </button>
-                <span id="dataPageIndicator">1 / 1</span>
-                <button id="dataNextPage" class="button button-muted" type="button">
-                  →
-                </button>
+                <label class="data-admin__per-page">
+                  <span>Por página</span>
+                  <select id="dataPerPageSelect">
+                    <option value="5">5</option>
+                    <option value="10">10</option>
+                    <option value="25" selected>25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                  </select>
+                </label>
+                <div class="data-admin__pager">
+                  <button id="dataPrevPage" class="button button-muted" type="button">
+                    Anterior
+                  </button>
+                  <div class="data-admin__page-jump">
+                    <input
+                      id="dataPageInput"
+                      type="number"
+                      min="1"
+                      value="1"
+                      aria-label="Página actual"
+                    />
+                    <span class="muted">/ <span id="dataPageTotal">1</span></span>
+                  </div>
+                  <button id="dataNextPage" class="button button-muted" type="button">
+                    Siguiente
+                  </button>
+                </div>
               </div>
             </header>
             <div id="dataStatus" class="data-admin__status" aria-live="polite"></div>
+            <div id="dataTableScrollTop" class="data-admin__scroll-top" aria-hidden="true">
+              <div id="dataTableScrollInner" class="data-admin__scroll-inner"></div>
+            </div>
             <div class="table-wrapper data-admin__table-wrapper">
               <table class="data-admin__table">
                 <thead id="dataTableHead"></thead>
@@ -106,9 +130,6 @@
             <button class="button button-muted" type="button" data-close-editor>
               Cancelar
             </button>
-            <button class="button button-secondary" type="button" id="dataImageModalBtn" hidden>
-              Ver / actualizar imagen
-            </button>
           </div>
           <button class="button button-primary" type="submit" form="dataEditorForm">
             Guardar cambios
@@ -119,15 +140,18 @@
 
     {% include "partials/auth_guard.html" %}
 
-    <input id="dataImageInput" type="file" accept="image/*" hidden />
+    <input id="dataImageInput" type="file" accept="*/*" hidden />
     <div id="dataLightbox" class="data-admin__lightbox" hidden aria-hidden="true" data-lightbox="true">
       <div class="data-admin__lightbox-content">
         <header class="data-admin__lightbox-header">
           <h3>Vista previa</h3>
-          <p class="muted">Abre la imagen o reemplázala desde aquí.</p>
+          <p class="muted">Abre el archivo o reemplázalo desde aquí.</p>
         </header>
         <img id="dataLightboxImg" class="data-admin__lightbox-media" alt="Vista previa" />
-        <p id="dataLightboxEmpty" class="muted" hidden>Este registro no tiene imagen. Sube una nueva.</p>
+        <div id="dataLightboxLink" class="data-admin__lightbox-link" hidden>
+          <a id="dataLightboxLinkAnchor" href="#" target="_blank" rel="noopener">Abrir archivo actual</a>
+        </div>
+        <p id="dataLightboxEmpty" class="muted" hidden>Este registro no tiene archivo disponible. Sube uno nuevo.</p>
         <div class="data-admin__lightbox-actions">
           <button class="button button-muted" type="button" data-close-lightbox>Cerrar</button>
           <button class="button button-primary" type="button" id="dataLightboxUploadBtn">

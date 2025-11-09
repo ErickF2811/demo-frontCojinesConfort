@@ -68,7 +68,15 @@ MANAGED_TABLES: Dict[str, Dict[str, Any]] = {
             "hidden": ["imagen_url", "qdrant", "storage_ultima_copy"],
             "labels": {"storage_account": "Imagen"},
             "thumbnail_columns": ["storage_account"],
-            "image_field": "storage_account",
+            "image_fields": ["storage_account"],
+            "upload_fields": {
+                "storage_account": {
+                    "type": "image",
+                    "container": "default",
+                    "prefix": "materiales",
+                    "accept": "image/*",
+                }
+            },
         },
     },
     "tbl_proveedores": {
@@ -97,15 +105,36 @@ MANAGED_TABLES: Dict[str, Dict[str, Any]] = {
             "stack",
             "url_catalogo",
             "url_portada",
-            "url_caratula",
+            "url_cartula",
         ],
         "display": {
             "labels": {
                 "url_catalogo": "Archivo",
                 "url_portada": "Portada",
-                "url_caratula": "Carátula",
+                "url_cartula": "Carátula",
             },
-            "thumbnail_columns": ["url_catalogo", "url_portada", "url_caratula"],
+            "thumbnail_columns": ["url_catalogo", "url_portada", "url_cartula"],
+            "image_fields": ["url_portada", "url_cartula"],
+            "upload_fields": {
+                "url_catalogo": {
+                    "type": "file",
+                    "container": "catalog",
+                    "prefix": "catalogos",
+                    "accept": "application/pdf",
+                },
+                "url_portada": {
+                    "type": "image",
+                    "container": "catalog",
+                    "prefix": "portadas",
+                    "accept": "image/*",
+                },
+                "url_cartula": {
+                    "type": "image",
+                    "container": "catalog",
+                    "prefix": "caratulas",
+                    "accept": "image/*",
+                },
+            },
         },
     },
     "tbl_movimientos": {
@@ -122,6 +151,10 @@ MANAGED_TABLES: Dict[str, Dict[str, Any]] = {
             "responsable",
             "observaciones",
             "funda",
+        ],
+        "order_by": [
+            {"column": "fecha", "direction": "desc"},
+            {"column": "id_movimiento", "direction": "desc"},
         ],
     },
 }
@@ -171,6 +204,20 @@ def get_managed_table_or_404(table_id: str) -> Dict[str, str]:
     if not table:
         abort(404, description="Tabla no permitida para edición.")
     return table
+
+
+def get_upload_field_config(table_id: str, column: str) -> Dict[str, Any] | None:
+    table = MANAGED_TABLES.get(table_id)
+    if not table:
+        return None
+    display = table.get("display") or {}
+    upload_fields: Dict[str, Any] = display.get("upload_fields") or {}
+    if column in upload_fields:
+        return upload_fields[column]
+    image_fields = display.get("image_fields") or []
+    if column in image_fields:
+        return {"type": "image"}
+    return None
 
 
 def _fetch_table_columns_from_db(table_id: str) -> List[str]:
@@ -634,6 +681,38 @@ AZURE_BLOB_IMAGES_CONTAINER = os.environ.get(
 
 _blob_service_client = None
 _blob_container_clients: Dict[str, Any] = {}
+
+
+def _resolve_upload_container(key: str | None) -> str:
+    normalized = (key or "").strip().lower()
+    if normalized in {"", "images", "default"}:
+        return AZURE_BLOB_IMAGES_CONTAINER or AZURE_BLOB_CONTAINER
+    if normalized == "catalog":
+        return AZURE_BLOB_CATALOG_CONTAINER or AZURE_BLOB_CONTAINER
+    return AZURE_BLOB_CONTAINER
+
+
+def _mime_type_matches(accept_pattern: str, mimetype: str) -> bool:
+    """Check if the provided mimetype satisfies an accept pattern (e.g., image/*)."""
+    pattern = (accept_pattern or "").strip()
+    if not pattern:
+        return True
+    mime = (mimetype or "").lower()
+    if not mime:
+        return False
+    for raw_token in pattern.split(","):
+        token = raw_token.strip().lower()
+        if not token:
+            continue
+        if token in {"*", "*/*"}:
+            return True
+        if token.endswith("/*"):
+            prefix = token[:-1]
+            if mime.startswith(prefix):
+                return True
+        if token == mime:
+            return True
+    return False
 
 
 def get_chat_webhook_url() -> str:
@@ -1315,6 +1394,26 @@ def api_data_table_rows(table_id: str):
         columns.insert(0, meta["primary_key"])
     pk = meta["primary_key"]
 
+    order_by_meta = meta.get("order_by") or []
+    order_clauses: list[sql.Composed] = []
+    ordered_columns: list[str] = []
+    for item in order_by_meta:
+        column = None
+        direction = "ASC"
+        if isinstance(item, str):
+            column = item
+        elif isinstance(item, dict):
+            column = item.get("column")
+            direction = (item.get("direction") or "asc").upper()
+        if column and column in columns:
+            direction_sql = sql.SQL("DESC") if direction == "DESC" else sql.SQL("ASC")
+            order_clauses.append(sql.SQL(" ").join([sql.Identifier(column), direction_sql]))
+            ordered_columns.append(column)
+
+    if pk not in ordered_columns:
+        order_clauses.append(sql.SQL(" ").join([sql.Identifier(pk), sql.SQL("ASC")]))
+        ordered_columns.append(pk)
+
     with get_connection() as conn, conn.cursor() as cur:
         count_sql = sql.SQL("SELECT COUNT(*) AS total FROM {table}").format(
             table=table_identifier(table_id)
@@ -1323,8 +1422,11 @@ def api_data_table_rows(table_id: str):
         total = int(cur.fetchone()["total"])
 
         data_sql = sql.SQL(
-            "SELECT * FROM {table} ORDER BY {pk} LIMIT %s OFFSET %s"
-        ).format(table=table_identifier(table_id), pk=sql.Identifier(pk))
+            "SELECT * FROM {table} ORDER BY {order_by} LIMIT %s OFFSET %s"
+        ).format(
+            table=table_identifier(table_id),
+            order_by=sql.SQL(", ").join(order_clauses),
+        )
         cur.execute(data_sql, (per_page, offset))
         rows = [
             {key: normalize_value(value) for key, value in row.items()}
@@ -1475,38 +1577,78 @@ def api_data_upload_image(table_id: str, pk_value: str):
     """Upload a new image to blob storage and update the configured image field."""
     meta = get_managed_table_or_404(table_id)
     display_meta: Dict[str, Any] = meta.get("display") or {}
-    image_field = display_meta.get("image_field")
-    if not image_field:
-        return jsonify({"error": "Esta tabla no admite actualización de imagen."}), 400
+    upload_meta: Dict[str, Any] = display_meta.get("upload_fields") or {}
+    image_fields = display_meta.get("image_fields") or []
+    if not image_fields and display_meta.get("image_field"):
+        image_fields = [display_meta["image_field"]]
+
+    allowed_columns: list[str] = []
+    for column in list(upload_meta.keys()) + list(image_fields):
+        if column and column not in allowed_columns:
+            allowed_columns.append(column)
+
+    if not allowed_columns:
+        return jsonify({"error": "Esta tabla no admite actualización de archivos."}), 400
 
     file = request.files.get("file")
     if not file or not file.filename:
-        return jsonify({"error": "Selecciona un archivo de imagen."}), 400
+        return jsonify({"error": "Selecciona un archivo válido."}), 400
+
+    requested_column = request.form.get("column")
+    target_column = requested_column or allowed_columns[0]
+    if not target_column or target_column not in allowed_columns:
+        return jsonify({"error": "Columna de archivo inválida."}), 400
+
+    upload_cfg = get_upload_field_config(table_id, target_column) or {}
+    kind = (upload_cfg.get("type") or "image").lower()
+    container_key = upload_cfg.get("container")
+    if container_key:
+        container_name = _resolve_upload_container(container_key)
+    else:
+        container_name = (
+            AZURE_BLOB_IMAGES_CONTAINER if kind == "image" else AZURE_BLOB_CONTAINER
+        )
+    prefix = upload_cfg.get("prefix") or f"data/{table_id}/{target_column}"
+    accept_pattern = (upload_cfg.get("accept") or "").strip()
+    content_type = file.mimetype or file.content_type or "application/octet-stream"
+
+    if accept_pattern and not _mime_type_matches(accept_pattern, content_type):
+        return jsonify(
+            {"error": f"El archivo debe cumplir con el tipo {accept_pattern}."}
+        ), 400
 
     try:
+        stream = getattr(file, "stream", None) or file
+        if hasattr(stream, "seek"):
+            stream.seek(0)
         url = upload_blob_stream(
-            file.stream,
+            stream,
             filename=file.filename,
-            content_type=file.mimetype or file.content_type or "application/octet-stream",
-            container_name=AZURE_BLOB_IMAGES_CONTAINER,
-            prefix=f"data/{table_id}",
+            content_type=content_type,
+            container_name=container_name,
+            prefix=prefix,
         )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:  # pragma: no cover
-        logger.exception("data.image upload failed table=%s pk=%s", table_id, pk_value)
-        return jsonify({"error": "No se pudo subir la imagen al blob storage."}), 500
+        logger.exception(
+            "data.image upload failed table=%s pk=%s column=%s",
+            table_id,
+            pk_value,
+            target_column,
+        )
+        return jsonify({"error": "No se pudo subir el archivo al blob storage."}), 500
 
     query = sql.SQL("UPDATE {table} SET {col} = %s WHERE {pk} = %s").format(
         table=table_identifier(table_id),
-        col=sql.Identifier(image_field),
+        col=sql.Identifier(target_column),
         pk=sql.Identifier(meta["primary_key"]),
     )
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(query, (url, pk_value))
         conn.commit()
 
-    return jsonify({"url": url})
+    return jsonify({"url": url, "column": target_column})
 
 @app.route("/api/catalogs", methods=["GET", "POST"])
 def api_catalogs():
@@ -1841,3 +1983,4 @@ def api_chat_messages():
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=os.getenv("PORT", 5000))
+
