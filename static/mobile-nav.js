@@ -30,6 +30,8 @@ const initMobileNav = (nav) => {
   const hamburger = nav.querySelector('.mobile-nav__hamburger');
   const drawer = nav.querySelector('.mobile-nav__drawer');
   const backdrop = nav.querySelector('.mobile-nav__backdrop');
+  const closeButton = nav.querySelector('.mobile-nav__drawer-close');
+  const label = nav.querySelector('.mobile-nav__label');
   if (!hamburger || !drawer || !backdrop) {
     return;
   }
@@ -50,10 +52,18 @@ const initMobileNav = (nav) => {
   });
 
   backdrop.addEventListener('click', () => closeDrawer(nav));
+  label?.addEventListener('click', () => closeDrawer(nav));
+  nav.addEventListener('click', (event) => {
+    if (event.target === nav && nav.classList.contains('is-open')) {
+      closeDrawer(nav);
+    }
+  });
 
   drawer.querySelectorAll('a').forEach((link) => {
     link.addEventListener('click', () => closeDrawer(nav));
   });
+
+  closeButton?.addEventListener('click', () => closeDrawer(nav));
 
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && nav.classList.contains('is-open')) {

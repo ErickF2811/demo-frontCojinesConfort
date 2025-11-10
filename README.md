@@ -310,6 +310,14 @@ docker push ${REGISTRY_USER}/${IMAGE_NAME}:${VERSION}
    > Si prefieres no usar `env_file`, declara las mismas variables directamente en la sección `environment:`.
 3. Clerk solo necesita la clave pública en el backend (`CLERK_PUBLISHABLE_KEY` o `VITE_CLERK_PUBLISHABLE_KEY`). Las claves secretas se administran desde el panel de Clerk, no se guardan en esta app. Si corres el frontend Vite por separado, crea un `.env.production` dentro de `clerk-javascript/` con `VITE_CLERK_PUBLISHABLE_KEY` y vuelve a ejecutar `npm run build` antes de generar la imagen.
 
+### Notas si usas tu dominio (`eflowdomain.cloud`)
+
+- Configura el DNS para que `eflowdomain.cloud` (o el subdominio que elijas) apunte a la IP pública de tu servidor.
+- Agrega la URL completa (`https://eflowdomain.cloud`) en el panel de Clerk → **Allowed Origins** y **Authorized redirect URIs** para que la SDK permita iniciar sesión desde tu dominio.
+- Opcionalmente define `APP_BASE_URL=https://eflowdomain.cloud` en tu `.env.prod` si tu proxy necesita saber la URL pública.
+- Si expones la app detrás de un proxy/Nginx, redirige el puerto 80/443 hacia el puerto interno del contenedor (`5000` por defecto) y configura TLS allí.
+- Para usar un subdominio dedicado (por ejemplo `invcojines.eflowdomain.cloud`), crea un registro **CNAME** que apunte a tu host principal (o a `eflowdomain.cloud` si es quien resuelve la IP) y vuelve a registrar la URL exacta (`https://invcojines.eflowdomain.cloud`) en Clerk y en tu proxy/TLS.
+
 ## Panel de Catálogos (PDF)
 
 El panel “Catálogos PDF” permite subir, listar y marcar como destacados los catálogos en formato PDF almacenados en Azure Blob Storage.
