@@ -85,17 +85,11 @@ const getUserAnchors = () => {
   const anchors = Array.from(document.querySelectorAll('[data-clerk-user-anchor]'));
   if (!anchors.length) return [];
 
-  const isDesktop = window.matchMedia('(min-width: 901px)').matches;
   const desktopAnchors = anchors.filter((a) => a.closest('.desktop-auth-bar'));
   const mobileAnchors = anchors.filter((a) => a.closest('.mobile-nav'));
 
-  if (isDesktop) {
-    if (desktopAnchors.length) return desktopAnchors;
-    if (mobileAnchors.length) return mobileAnchors;
-  } else {
-    if (mobileAnchors.length) return mobileAnchors;
-    if (desktopAnchors.length) return desktopAnchors;
-  }
+  if (mobileAnchors.length) return mobileAnchors;
+  if (desktopAnchors.length) return desktopAnchors;
 
   return anchors;
 };
@@ -106,17 +100,11 @@ const getRolePills = () => {
   const pills = Array.from(document.querySelectorAll('[data-role-pill]'));
   if (!pills.length) return [];
 
-  const isDesktop = window.matchMedia('(min-width: 901px)').matches;
   const desktopPills = pills.filter((p) => p.closest('.desktop-auth-bar'));
   const mobilePills = pills.filter((p) => p.closest('.mobile-nav'));
 
-  if (isDesktop) {
-    if (desktopPills.length) return desktopPills;
-    if (mobilePills.length) return mobilePills;
-  } else {
-    if (mobilePills.length) return mobilePills;
-    if (desktopPills.length) return desktopPills;
-  }
+  if (mobilePills.length) return mobilePills;
+  if (desktopPills.length) return desktopPills;
 
   return pills;
 };
