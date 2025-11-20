@@ -1,6 +1,7 @@
 ﻿const filtersForm = document.getElementById("filtersForm");
 const refreshButton = document.getElementById("refreshButton");
 const resetButton = document.getElementById("resetFilters");
+const idInput = document.getElementById("filter-id");
 const resultsSummary = document.getElementById("resultsSummary");
 const tableBody = document.getElementById("materialsTableBody");
 const perPageSelect = document.getElementById("perPage");
@@ -195,6 +196,9 @@ resetButton?.addEventListener("click", () => {
     conf.options.querySelectorAll('input[type="checkbox"]').forEach(i => (i.checked = false));
     updateDropdownLabel(key);
   });
+  if (idInput) {
+    idInput.value = "";
+  }
   currentPage = 1;
   fetchMaterials();
 });
@@ -287,6 +291,14 @@ window.addEventListener("DOMContentLoaded", () => {
 
 function buildQueryParams() {
   const params = new URLSearchParams();
+  const rawId = (idInput?.value || "").trim();
+  if (rawId) {
+    rawId
+      .split(",")
+      .map(v => v.trim())
+      .filter(Boolean)
+      .forEach(v => params.append("id", v));
+  }
   Object.keys(filtersConfig).forEach((key) => {
     selectedValues(key).forEach(v => params.append(key, v));
   });

@@ -502,9 +502,7 @@ def fetch_material_list_with_total(
     where_clauses = []
     params: List[Any] = []
 
-    # Filter by ID
-    # - If value is only digits, match by trailing digits (e.g., 5 -> M00005, 123 -> M00123)
-    # - Otherwise, exact match (e.g., M00005)
+    # Filter by ID with case-insensitive partial match (supports multiple IDs/comma-separated)
     try:
         id_values = filters.get("id") or []
         if id_values:
@@ -513,13 +511,8 @@ def fetch_material_list_with_total(
                 s = (raw or "").strip()
                 if not s:
                     continue
-                if s.isdigit():
-                    # Ends-with numeric match using RIGHT(col, len) = digits
-                    ors.append("RIGHT(id_material, CHAR_LENGTH(%s)) = %s")
-                    params.extend([s, s])
-                else:
-                    ors.append("id_material = %s")
-                    params.append(s)
+                ors.append("id_material ILIKE %s")
+                params.append(f"%{s}%")
             if ors:
                 where_clauses.append("(" + " OR ".join(ors) + ")")
             # Remove to avoid being processed by the generic mapping
