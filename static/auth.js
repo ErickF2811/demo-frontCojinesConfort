@@ -3,6 +3,7 @@ const clerkPublishableKey = (window.CLERK_PUBLISHABLE_KEY || '').trim();
 const overlay = document.getElementById('auth-overlay');
 const signInContainer = document.getElementById('clerk-sign-in');
 const overlayRoleMeta = document.getElementById('auth-role-meta');
+const switchAccountBtn = document.getElementById('auth-switch-account');
 const userButtonAnchor = document.getElementById('clerk-user-button-anchor');
 const rolePill = document.getElementById('auth-role-pill');
 const userButtonSlot = document.getElementById('clerk-user-button-slot');
@@ -227,6 +228,24 @@ const setOverlayMessage = (title, message) => {
   }
 };
 
+const toggleSwitchAccount = (show) => {
+  if (!switchAccountBtn) return;
+  switchAccountBtn.hidden = !show;
+  if (show && !switchAccountBtn.dataset.bound) {
+    switchAccountBtn.dataset.bound = 'true';
+    switchAccountBtn.addEventListener('click', async () => {
+      try {
+        const clerk = state.clerk || window.Clerk;
+        if (clerk?.signOut) {
+          await clerk.signOut();
+        }
+      } catch (err) {
+        console.error('[auth] signOut failed', err);
+      }
+    });
+  }
+};
+
 const updateRoleBadges = (user) => {
   const role = (user?.publicMetadata?.role ?? '').toString();
   const roleLabel = role.trim() ? role : 'sin rol';
@@ -309,8 +328,10 @@ const handleSignedIn = (clerk, user) => {
       'Tu cuenta no tiene un rol asignado. Solicita al administrador que configure tu rol (admin/editor).'
     );
     setLocked(true);
+    toggleSwitchAccount(true);
   } else {
     setLocked(false);
+    toggleSwitchAccount(false);
   }
 
   if (!state.userButtonMounted) {
@@ -320,6 +341,7 @@ const handleSignedIn = (clerk, user) => {
 
 const handleSignedOut = (clerk) => {
   setLocked(true);
+  toggleSwitchAccount(false);
   if (state.userButtonMounted) {
     unmountUserButton();
   }

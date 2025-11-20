@@ -83,7 +83,6 @@ La aplicación quedará disponible en [http://localhost:5000](http://localhost:5
 ## Ejecutar con Docker
 
 Construye la imagen:
-
 ```bash
 docker build -t cojines-materiales:latest .
 ```
@@ -277,7 +276,7 @@ Notas de compatibilidad
 
 ```powershell
 $IMAGE_NAME = "cojines-app"
-$VERSION = "v8.3"
+$VERSION = "v8.4"
 $REGISTRY_USER = "erifcamp"
 docker build -t ${IMAGE_NAME}:${VERSION} .
 docker tag ${IMAGE_NAME}:${VERSION} ${REGISTRY_USER}/${IMAGE_NAME}:${VERSION}
