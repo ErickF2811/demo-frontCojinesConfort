@@ -5,7 +5,7 @@ const state = {
   columns: [],
   rows: [],
   page: 1,
-  perPage: 25,
+  perPage: 5,
   total: 0,
   editingRow: null,
   originalRow: null,

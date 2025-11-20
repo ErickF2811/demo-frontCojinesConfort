@@ -23,13 +23,9 @@
       <div class="layout__content">
         {% include "partials/mobile_nav.html" %}
         <section class="tab-panel tab-panel--active data-admin">
-          <header class="page-header">
+          <header class="page-header page-header--compact">
             <div>
               <h1>Administración de datos</h1>
-              <p class="subtitle">
-                Gestiona tablas base de PostgreSQL. Puedes modificar un registro a la vez, eliminarlo,
-                importar nuevos datos desde CSV o exportar la tabla completa.
-              </p>
             </div>
             <div class="data-admin__toolbar" aria-live="polite">
               <label class="data-admin__select">
@@ -70,9 +66,9 @@
                 <label class="data-admin__per-page">
                   <span>Por página</span>
                   <select id="dataPerPageSelect">
-                    <option value="5">5</option>
+                    <option value="5" selected>5</option>
                     <option value="10">10</option>
-                    <option value="25" selected>25</option>
+                    <option value="25">25</option>
                     <option value="50">50</option>
                     <option value="100">100</option>
                   </select>

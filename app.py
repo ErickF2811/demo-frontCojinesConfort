@@ -78,6 +78,10 @@ MANAGED_TABLES: Dict[str, Dict[str, Any]] = {
                 }
             },
         },
+        "order_by": [
+            {"column": "fecha", "direction": "desc"},
+            {"column": "id_material", "direction": "desc"},
+        ],
     },
     "tbl_proveedores": {
         "label": "Proveedores",
@@ -91,6 +95,10 @@ MANAGED_TABLES: Dict[str, Dict[str, Any]] = {
             "direccion",
             "observaciones",
             "fecha",
+        ],
+        "order_by": [
+            {"column": "fecha", "direction": "desc"},
+            {"column": "id_proveedor", "direction": "desc"},
         ],
     },
     "tbl_catalogo": {
@@ -136,6 +144,10 @@ MANAGED_TABLES: Dict[str, Dict[str, Any]] = {
                 },
             },
         },
+        "order_by": [
+            {"column": "created_at", "direction": "desc"},
+            {"column": "catalog_id", "direction": "desc"},
+        ],
     },
     "tbl_movimientos": {
         "label": "Movimientos",
@@ -1387,7 +1399,7 @@ def api_data_table_rows(table_id: str):
     """Return paginated rows for a managed table."""
     meta = get_managed_table_or_404(table_id)
     page = max(1, request.args.get("page", default=1, type=int))
-    per_page = min(100, max(1, request.args.get("per_page", default=25, type=int)))
+    per_page = min(100, max(1, request.args.get("per_page", default=5, type=int)))
     offset = (page - 1) * per_page
     columns = get_table_columns(table_id)
     if meta["primary_key"] not in columns:
