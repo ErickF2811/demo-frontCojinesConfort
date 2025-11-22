@@ -18,14 +18,15 @@
         <a class="sidebar__link" href="{{ url_for('materiales_page') }}">Listado</a>
         <a class="sidebar__link" href="{{ url_for('catalogos_page') }}">Catálogos</a>
         <a class="sidebar__link" href="{{ url_for('cotizador_page') }}">Cotización</a>
+        <a class="sidebar__link" href="{{ url_for('finanzas_page') }}">Finanzas</a>
         <a class="sidebar__link is-active" href="{{ url_for('data_admin_page') }}">Data</a>
-      </nav>
+</nav>
       <div class="layout__content">
         {% include "partials/mobile_nav.html" %}
         <section class="tab-panel tab-panel--active data-admin">
           <header class="page-header page-header--compact">
             <div>
-              <h1>Administración de datos</h1>
+              <h1>Administraci�n de datos</h1>
             </div>
             <div class="data-admin__toolbar" aria-live="polite">
               <label class="data-admin__select">
@@ -64,7 +65,7 @@
               </div>
               <div class="data-admin__pagination">
                 <label class="data-admin__per-page">
-                  <span>Por página</span>
+                  <span>Por p�gina</span>
                   <select id="dataPerPageSelect">
                     <option value="5" selected>5</option>
                     <option value="10">10</option>
@@ -83,7 +84,7 @@
                       type="number"
                       min="1"
                       value="1"
-                      aria-label="Página actual"
+                      aria-label="P�gina actual"
                     />
                     <span class="muted">/ <span id="dataPageTotal">1</span></span>
                   </div>
@@ -141,7 +142,7 @@
       <div class="data-admin__lightbox-content">
         <header class="data-admin__lightbox-header">
           <h3>Vista previa</h3>
-          <p class="muted">Abre el archivo o reemplázalo desde aquí.</p>
+          <p class="muted">Abre el archivo o reempl�zalo desde aqu�.</p>
         </header>
         <img id="dataLightboxImg" class="data-admin__lightbox-media" alt="Vista previa" />
         <div id="dataLightboxLink" class="data-admin__lightbox-link" hidden>

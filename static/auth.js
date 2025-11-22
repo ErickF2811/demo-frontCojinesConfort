@@ -16,7 +16,7 @@ const state = {
 };
 
 const ACCESS_RULES = {
-  admin: ['materiales', 'catalogos', 'cotizador', 'data'],
+  admin: ['materiales', 'catalogos', 'cotizador', 'data', 'finanzas'],
   editor: ['materiales'],
 };
 const DEFAULT_ACCESS = [];
@@ -117,6 +117,7 @@ const resolveSlugFromUrl = (url) => {
   if (path.includes('/catalogo')) return 'catalogos';
   if (path.includes('/cotizador')) return 'cotizador';
   if (path.includes('/material')) return 'materiales';
+  if (path.includes('/finanzas')) return 'finanzas';
   return '';
 };
 

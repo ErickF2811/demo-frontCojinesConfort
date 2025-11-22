@@ -5,11 +5,15 @@ const idInput = document.getElementById("filter-id");
 const resultsSummary = document.getElementById("resultsSummary");
 const tableBody = document.getElementById("materialsTableBody");
 const perPageSelect = document.getElementById("perPage");
+const sortFieldSelect = document.getElementById("sortField");
+const sortDirSelect = document.getElementById("sortDir");
 const prevPageBtn = document.getElementById("prevPage");
 const nextPageBtn = document.getElementById("nextPage");
 const pageInput = document.getElementById("pageInput");
 const totalPagesEl = document.getElementById("totalPages");
 const tableCard = document.querySelector(".table-card");
+const thSortId = document.getElementById("thSortId");
+const thSortStock = document.getElementById("thSortStock");
 const mobileMediaQuery = window.matchMedia("(max-width: 640px)");
 const quoteButton = document.getElementById("quoteButton");
 const quoteStatus = document.getElementById("quoteStatus");
@@ -205,6 +209,7 @@ resetButton?.addEventListener("click", () => {
 
 window.addEventListener("DOMContentLoaded", () => {
   syncMobileLayoutClass();
+  syncSortIndicators();
   mobileMediaQuery.addEventListener("change", syncMobileLayoutClass);
   fetchFilters().then(fetchMaterials);
 
@@ -221,6 +226,13 @@ window.addEventListener("DOMContentLoaded", () => {
     const id = tr.dataset.idMaterial;
     const base = (window.__materialsById && window.__materialsById.get(id)) || {};
     openDetail(id, base);
+  });
+
+  sortFieldSelect?.addEventListener("change", () => {
+    applySort(sortFieldSelect.value, sortDir);
+  });
+  sortDirSelect?.addEventListener("change", () => {
+    applySort(sortBy, sortDirSelect.value);
   });
 
   perPageSelect?.addEventListener("change", () => {
@@ -355,6 +367,34 @@ let sortDir = "asc"; // asc | desc
 let currentPage = 1;
 let perPage = Number(perPageSelect?.value || 5) || 5;
 let totalItems = 0;
+
+function normalizeSortField(value) {
+  return value === "stock" ? "stock" : "id";
+}
+
+function normalizeSortDir(value) {
+  return value === "desc" ? "desc" : "asc";
+}
+
+function syncSortIndicators() {
+  [thSortId, thSortStock].forEach(th => {
+    if (!th) return;
+    th.classList.remove('sorted-asc','sorted-desc');
+    if (th.dataset.sort === sortBy) {
+      th.classList.add(sortDir === 'asc' ? 'sorted-asc' : 'sorted-desc');
+    }
+  });
+  if (sortFieldSelect) sortFieldSelect.value = sortBy;
+  if (sortDirSelect) sortDirSelect.value = sortDir;
+}
+
+function applySort(field, direction) {
+  sortBy = normalizeSortField(field);
+  sortDir = normalizeSortDir(direction);
+  syncSortIndicators();
+  currentPage = 1;
+  fetchMaterials();
+}
 
 async function fetchMaterials() {
   try {
@@ -831,30 +871,13 @@ function buildMovementsChart(movs, targetWidth) {
 }
 
 // Sorting handlers
-const thSortId = document.getElementById("thSortId");
-const thSortStock = document.getElementById("thSortStock");
-
 function toggleSort(target) {
-  const sort = target.dataset.sort;
-  if (sortBy === sort) {
-    sortDir = sortDir === "asc" ? "desc" : "asc";
-  } else {
-    sortBy = sort;
-    sortDir = "asc";
-  }
-  // Update visual indicators
-  [thSortId, thSortStock].forEach(th => {
-    if (!th) return;
-    th.classList.remove('sorted-asc','sorted-desc');
-    if (th.dataset.sort === sortBy) th.classList.add(sortDir === 'asc' ? 'sorted-asc' : 'sorted-desc');
-  });
-  fetchMaterials();
+  const sort = target.dataset.sort === "stock" ? "stock" : "id";
+  const nextDir = sortBy === sort && sortDir === "asc" ? "desc" : "asc";
+  applySort(sort, nextDir);
 }
 
 thSortId?.addEventListener("click", () => toggleSort(thSortId));
 thSortStock?.addEventListener("click", () => toggleSort(thSortStock));
-
-// Initialize sort indicators on load
-if (thSortId) thSortId.classList.add('sorted-asc');
 
 
