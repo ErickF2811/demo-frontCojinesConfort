@@ -28,12 +28,6 @@ from flask import (
 )
 
 from db import get_connection
-from services.finanzas import (
-    fetch_resumen as fetch_finanzas_resumen,
-    fetch_ingresos as fetch_finanzas_ingresos,
-    fetch_egresos as fetch_finanzas_egresos,
-    fetch_config as fetch_finanzas_config,
-)
 from services.catalogs import (
     create_catalog_entry,
     list_catalog_entries,
@@ -1308,61 +1302,6 @@ def catalogos_page() -> str:
 def cotizador_page() -> str:
     """Render the quote builder page."""
     return render_template("cotizador.html", chat_webhook_url=get_chat_webhook_url())
-
-
-@app.route("/finanzas")
-def finanzas_page() -> str:
-    """Render the finances dashboard page."""
-    return render_template("finanzas.html", chat_webhook_url=get_chat_webhook_url())
-
-
-@app.route("/api/finanzas/resumen")
-def api_finanzas_resumen():
-    date_from = request.args.get("from") or request.args.get("date_from")
-    date_to = request.args.get("to") or request.args.get("date_to")
-    tipo = request.args.get("tipo") or request.args.get("type")
-    try:
-        data = fetch_finanzas_resumen(date_from, date_to, tipo)
-        return jsonify(data)
-    except Exception as exc:  # pragma: no cover
-        logger.exception("finanzas.resumen error")
-        return jsonify({"error": str(exc)}), 500
-
-
-@app.route("/api/finanzas/ingresos")
-def api_finanzas_ingresos():
-    date_from = request.args.get("from") or request.args.get("date_from")
-    date_to = request.args.get("to") or request.args.get("date_to")
-    tipo = request.args.get("tipo") or request.args.get("type")
-    try:
-        data = fetch_finanzas_ingresos(date_from, date_to, tipo)
-        return jsonify({"items": data})
-    except Exception as exc:  # pragma: no cover
-        logger.exception("finanzas.ingresos error")
-        return jsonify({"error": str(exc), "items": []}), 500
-
-
-@app.route("/api/finanzas/egresos")
-def api_finanzas_egresos():
-    date_from = request.args.get("from") or request.args.get("date_from")
-    date_to = request.args.get("to") or request.args.get("date_to")
-    tipo = request.args.get("tipo") or request.args.get("type")
-    try:
-        data = fetch_finanzas_egresos(date_from, date_to, tipo)
-        return jsonify({"items": data})
-    except Exception as exc:  # pragma: no cover
-        logger.exception("finanzas.egresos error")
-        return jsonify({"error": str(exc), "items": []}), 500
-
-
-@app.route("/api/finanzas/config")
-def api_finanzas_config():
-    try:
-        data = fetch_finanzas_config()
-        return jsonify(data)
-    except Exception as exc:  # pragma: no cover
-        logger.exception("finanzas.config error")
-        return jsonify({"error": str(exc)}), 500
 
 
 @app.route("/data")
